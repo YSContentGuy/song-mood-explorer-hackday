@@ -255,6 +255,30 @@ class DatasetLoader {
       }
     );
 
+    // Merge enhancements back into the base dataset so downstream scoring uses them
+    const byId = new Map();
+    this.songs.forEach((s, idx) => {
+      const key = s.SONG_ID || s.id;
+      if (key) byId.set(key, idx);
+    });
+    this.enhancedSongs.forEach(es => {
+      const key = es.SONG_ID || es.id;
+      if (!key) return;
+      const idx = byId.get(key);
+      if (idx === undefined) return;
+      const base = this.songs[idx];
+      // Merge tags and energy
+      const enhancedTags = Array.isArray(es.enhancedTags) ? es.enhancedTags : [];
+      const baseTags = Array.isArray(base.style_tags) ? base.style_tags : [];
+      const merged = Array.from(new Set([...baseTags, ...enhancedTags]));
+      base.style_tags = merged;
+      if (es.enhancedEnergyLevel) {
+        base.energy_level = es.enhancedEnergyLevel;
+      }
+      base.llmEnhancement = es.llmEnhancement || base.llmEnhancement;
+      this.songs[idx] = base;
+    });
+
     return this.enhancedSongs;
   }
 
@@ -333,27 +357,55 @@ class DatasetLoader {
       throw new Error('Dataset not loaded. Call loadSongDataset() first.');
     }
 
-    const genreSet = new Set(Array.isArray(genres) ? genres : [genres]);
-    const matched = this.songs.filter(s => (s.genre_tags || []).some(g => genreSet.has(g)) ||
-      // fallback: raw text search when tags sparse
+    const computeStats = (songs) => {
+      const count = songs.length;
+      const avgDifficulty = count > 0
+        ? Math.round((songs.reduce((sum, s) => sum + (s.difficulty_level || 0), 0) / count) * 100) / 100
+        : null;
+      const energyCounts = {};
+      const tagCounts = {};
+      songs.forEach(s => {
+        if (s.energy_level) energyCounts[s.energy_level] = (energyCounts[s.energy_level] || 0) + 1;
+        (s.style_tags || []).forEach(t => { tagCounts[t] = (tagCounts[t] || 0) + 1; });
+      });
+      const dominantEnergy = Object.entries(energyCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || null;
+      const topStyleTags = Object.entries(tagCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t])=>t);
+      return { count, avgDifficulty, dominantEnergy, topStyleTags };
+    };
+
+    const inputGenres = Array.isArray(genres) ? genres : [genres];
+    const genreSet = new Set(inputGenres.map(g => String(g).toLowerCase()));
+
+    // 1) Try strict genre matches
+    let matched = this.songs.filter(s => (s.genre_tags || []).some(g => genreSet.has(String(g).toLowerCase())) ||
       (s.GENRES || '').toLowerCase().split(',').some(raw => genreSet.has(raw.trim().toLowerCase())));
+    let stats = computeStats(matched);
+    if (stats.count > 0) return { ...stats, source: 'genre' };
 
-    const count = matched.length;
-    const avgDifficulty = count > 0
-      ? Math.round((matched.reduce((sum, s) => sum + (s.difficulty_level || 0), 0) / count) * 100) / 100
-      : null;
+    // 2) Fallback to style keywords derived from genres
+    const styleMap = {
+      rock: ['rock', 'energetic', 'powerful'],
+      alternative: ['alternative', 'indie', 'modern'],
+      indie: ['indie', 'alternative'],
+      pop: ['pop', 'catchy', 'upbeat'],
+      acoustic: ['acoustic', 'folk', 'gentle'],
+      folk: ['folk', 'storytelling', 'acoustic'],
+      metal: ['metal', 'aggressive', 'intense'],
+      progressive: ['progressive', 'complex'],
+      jazz: ['jazz', 'sophisticated', 'cool'],
+      dance: ['dance', 'upbeat'],
+      funk: ['funk', 'groove']
+    };
+    const styleCandidates = inputGenres.flatMap(g => styleMap[String(g).toLowerCase()] || []);
+    if (styleCandidates.length > 0) {
+      matched = this.songs.filter(s => (s.style_tags || []).some(t => styleCandidates.includes(String(t).toLowerCase())));
+      stats = computeStats(matched);
+      if (stats.count > 0) return { ...stats, source: 'style' };
+    }
 
-    const energyCounts = {};
-    const tagCounts = {};
-    matched.forEach(s => {
-      if (s.energy_level) energyCounts[s.energy_level] = (energyCounts[s.energy_level] || 0) + 1;
-      (s.style_tags || []).forEach(t => { tagCounts[t] = (tagCounts[t] || 0) + 1; });
-    });
-
-    const dominantEnergy = Object.entries(energyCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || null;
-    const topStyleTags = Object.entries(tagCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t])=>t);
-
-    return { count, avgDifficulty, dominantEnergy, topStyleTags };
+    // 3) Last resort: global dataset summary so the UI has something meaningful
+    stats = computeStats(this.songs);
+    return { ...stats, source: 'global' };
   }
 
   /**
@@ -489,7 +541,13 @@ class DatasetLoader {
         return Array.isArray(parsed) ? parsed : [];
       }
     } catch (_) {
-      // fallthrough to comma parsing
+      // fallthrough to custom parsing below
+    }
+    // Handle bracketed non-JSON lists like: [\n  rock\n]
+    if (str.startsWith('[') && str.endsWith(']')) {
+      const inner = str.slice(1, -1).replace(/\r?\n/g, ' ').replace(/[\"\[\]]/g, ' ');
+      const tokens = inner.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+      if (tokens.length > 0) return tokens;
     }
     if (str.includes(',')) return str.split(',').map(s => s.trim()).filter(Boolean);
     return [str];

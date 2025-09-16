@@ -15,7 +15,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Redirect root to basic demo
+// Redirect root to the nicer basic demo (click a user → profile + song)
 app.get('/', (req, res) => {
   res.redirect('/basic-demo.html');
 });
@@ -26,6 +26,30 @@ const moodExplorer = new MoodExplorer();
 const datasetLoader = new DatasetLoader();
 // Share loader across all clients to keep data consistent
 global.__YS_SHARED_DATASET_LOADER = datasetLoader;
+
+// Autoload Pavel's dataset and run LLM enhancement on startup
+(async () => {
+  try {
+    // Prefer Pavel's CSV if present; otherwise load default dataset
+    await datasetLoader.loadFromLocalCsv('song metadata (2).csv').catch(async () => {
+      await datasetLoader.loadSongDataset();
+    });
+
+    // Always run a lightweight enhancement pass so tags/energy are enriched
+    await datasetLoader.enhanceSongsWithLLM({ maxSongs: 50, onlySparseTags: true });
+
+    // If a real LLM key is present, upgrade a small batch with OpenAI in background
+    if (process.env.OPENAI_API_KEY) {
+      datasetLoader.enhanceSongsWithLLM({ maxSongs: 20, onlySparseTags: true })
+        .then(() => console.log('LLM (OpenAI) enhancement completed for 20 songs'))
+        .catch(() => {});
+    }
+
+    console.log('Dataset ready: Pavel CSV + LLM-enhanced tags merged.');
+  } catch (e) {
+    console.log('Startup dataset init fallback:', e.message);
+  }
+})();
 
 // Routes
 app.get('/api', (req, res) => {
@@ -101,13 +125,8 @@ app.get('/api/demo/users-overview', async (req, res) => {
         context,
         suggestion: top,
         summary,
-        user: {
-          skillLevel: u.skillLevel,
-          playingExperience: u.playingExperience,
-          practiceFrequency: u.practiceFrequency,
-          preferredDifficulty: u.preferredDifficulty,
-          genrePreferences: u.genrePreferences
-        }
+        // return full user profile to avoid any field mismatch
+        user: u
       });
     }
 
@@ -571,7 +590,7 @@ app.get('/api/mood/songs/:moodCategory', async (req, res) => {
 // Simple user suggestion: provide a mood and get 1 top suggestion with reasoning
 app.get('/api/demo/user-suggestion', async (req, res) => {
   try {
-    const { userId, mood = 'neutral', timeOfDay, availableTime = 15, goals = 'relax' } = req.query;
+    const { userId, mood = 'neutral', timeOfDay, availableTime = 15, goals = 'relax', offset = 0 } = req.query;
     const users = datasetLoader.getMockUserProfiles();
     const user = users.find(u => u.id === userId) || users[0];
 
@@ -588,7 +607,8 @@ app.get('/api/demo/user-suggestion', async (req, res) => {
 
     const explorer = new MoodExplorer();
     const recs = await explorer.getContextualRecommendations(user, context);
-    const top = recs[0] || null;
+    const idx = Math.max(0, Math.min(recs.length - 1, parseInt(offset) || 0));
+    const top = recs[idx] || null;
 
     res.json({
       user: {
@@ -601,7 +621,9 @@ app.get('/api/demo/user-suggestion', async (req, res) => {
         }
       },
       context,
-      suggestion: top
+      suggestion: top,
+      offset: idx,
+      total: recs.length
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

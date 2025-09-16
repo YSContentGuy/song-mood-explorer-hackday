@@ -7,6 +7,8 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "demo": "node scripts/start-demo.js",
+    "demo:refresh": "node scripts/refresh-demo.js",
     "build:story": "node scripts/build-static-story.js",
     "build:story:csv": "node scripts/build-static-story.js 'song metadata (2).csv'"
   },
