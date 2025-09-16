@@ -20,7 +20,8 @@ class MoodExplorer {
       const contextualSongs = await this.applyContextualFilters(userProfile, context);
       
       // Combine and rank recommendations
-      return this.combineRecommendations(comfortZoneRecommendations, contextualSongs, context);
+      const ctx = { ...context, userProfile };
+      return this.combineRecommendations(comfortZoneRecommendations, contextualSongs, ctx);
     } catch (error) {
       console.error('Error getting contextual recommendations:', error.message);
       throw error;
@@ -34,13 +35,13 @@ class MoodExplorer {
    * @returns {Promise} Filtered songs
    */
   async applyContextualFilters(userProfile, context) {
-    const filters = this.buildContextualFilters(context);
+    const filters = this.buildContextualFilters(userProfile, context);
     
     // Get songs that match contextual criteria
     const songs = await this.client.searchSongs(filters);
     
-    // Apply mood-based scoring
-    return this.scoreSongsByMood(songs, context);
+    // Apply mood-based scoring (augment context with user profile)
+    return this.scoreSongsByMood(songs, { ...context, userProfile });
   }
 
   /**
@@ -48,11 +49,11 @@ class MoodExplorer {
    * @param {Object} context - Context with mood, time, available_time, goals, etc.
    * @returns {Object} Search filters
    */
-  buildContextualFilters(context) {
+  buildContextualFilters(userProfile, context) {
     const filters = {};
     
-    // Time-based filters
-    if (context.timeOfDay) {
+    // Time-based filters (avoid over-restricting when a mood is specified)
+    if (context.timeOfDay && !context.mood) {
       filters.energy_level = this.getEnergyLevelForTime(context.timeOfDay);
     }
     
@@ -63,10 +64,11 @@ class MoodExplorer {
     
     // Goal-based filters
     if (context.goals === 'challenge') {
-      filters.min_difficulty = userProfile.skillLevel + 1; // Push boundaries
+      filters.min_difficulty = (userProfile?.skillLevel || 3) + 1; // Push boundaries
       filters.density = 'high'; // More notes/chords
     } else if (context.goals === 'relax') {
-      filters.max_difficulty = userProfile.skillLevel - 1; // Stay comfortable
+      // Keep within/at skill level to avoid over-restricting beginners
+      filters.max_difficulty = Math.max(1, (userProfile?.skillLevel || 3));
       filters.style_tags = ['calm', 'peaceful', 'slow'];
     }
     
@@ -132,6 +134,31 @@ class MoodExplorer {
         }
       };
     }).sort((a, b) => b.contextualScore - a.contextualScore);
+  }
+
+  /**
+   * Estimate a "comfort zone" score from user preferences and difficulty proximity
+   */
+  getComfortZoneScore(song, userProfile) {
+    let score = 0.5; // neutral baseline
+
+    // Difficulty proximity (closer to skillLevel is better)
+    if (userProfile && typeof userProfile.skillLevel === 'number' && typeof song.difficulty_level === 'number') {
+      const gap = Math.abs(song.difficulty_level - userProfile.skillLevel);
+      if (gap === 0) score += 0.4;
+      else if (gap === 1) score += 0.3;
+      else if (gap === 2) score += 0.15;
+      else score += 0.0;
+    }
+
+    // Genre preference match
+    if (userProfile && Array.isArray(userProfile.genrePreferences) && Array.isArray(song.genre_tags)) {
+      const matches = song.genre_tags.filter(g => userProfile.genrePreferences.includes(g)).length;
+      if (matches >= 2) score += 0.3;
+      else if (matches === 1) score += 0.2;
+    }
+
+    return Math.min(1.0, Math.max(0.0, score));
   }
 
   getContextualWeights(context) {
@@ -381,8 +408,14 @@ class MoodExplorer {
     const contextWeight = context.exploreNewMoods ? 0.7 : 0.3;
     const comfortWeight = 1 - contextWeight;
     
+    // If contextual list is empty, score comfort picks to provide explanations
+    let contextualScored = contextual;
+    if (!contextualScored || contextualScored.length === 0) {
+      contextualScored = this.scoreSongsByMood(comfortZone, context);
+    }
+
     // Take top contextual recommendations
-    const topContextual = contextual.slice(0, Math.ceil(10 * contextWeight));
+    const topContextual = contextualScored.slice(0, Math.ceil(10 * contextWeight));
     
     // Take remaining from comfort zone
     const remainingSlots = 10 - topContextual.length;

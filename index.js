@@ -14,14 +14,21 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+
+// Redirect root to basic demo
+app.get('/', (req, res) => {
+  res.redirect('/basic-demo.html');
+});
 app.use(requestLogger);
 
 // Initialize services
 const moodExplorer = new MoodExplorer();
 const datasetLoader = new DatasetLoader();
+// Share loader across all clients to keep data consistent
+global.__YS_SHARED_DATASET_LOADER = datasetLoader;
 
 // Routes
-app.get('/', (req, res) => {
+app.get('/api', (req, res) => {
   res.json({
     message: 'Song Mood Explorer API - Beyond Comfort Zone Recommendations',
     version: '2.0.0',
@@ -45,6 +52,69 @@ app.get('/', (req, res) => {
       'Energy levels'
     ]
   });
+});
+
+// Overview for 3 pretend users with auto mood + suggestion derived from dataset
+app.get('/api/demo/users-overview', async (req, res) => {
+  try {
+    const client = new YousicianClient();
+    await client.ensureDatasetLoaded();
+
+    const users = datasetLoader.getMockUserProfiles();
+
+    // Pick mood from summary heuristics
+    const pickMood = (summary) => {
+      switch (summary.dominantEnergy) {
+        case 'very_high':
+        case 'high': return 'energetic';
+        case 'very_low':
+        case 'low': return 'relaxed';
+        default: {
+          const tags = summary.topStyleTags.join(',').toLowerCase();
+          if (tags.includes('peace') || tags.includes('calm') || tags.includes('dream')) return 'calm';
+          if (tags.includes('happy') || tags.includes('upbeat') || tags.includes('positive')) return 'happy';
+          if (tags.includes('melanch')) return 'sad';
+          return 'neutral';
+        }
+      }
+    };
+
+    const timeOfDay = new MoodExplorer().getTimeSlot(new Date().getHours());
+
+    const results = [];
+    for (const u of users) {
+      const summary = client.datasetLoader.summarizeForGenres(u.genrePreferences);
+      const mood = pickMood(summary);
+      const goals = summary.dominantEnergy && (summary.dominantEnergy === 'high' || summary.dominantEnergy === 'very_high') ? 'challenge' : 'relax';
+      const context = { mood, timeOfDay, availableTime: 20, goals, exploreNewMoods: true };
+      const recs = await moodExplorer.getContextualRecommendations(u, context);
+      const top = recs[0] || null;
+
+      const blurb = `${u.name.split('(')[1]?.replace(')', '') || 'Player'} · Likes ${u.genrePreferences.join(', ')} · ` +
+        (summary.count > 0 ? `${summary.count} matching songs (avg diff ${summary.avgDifficulty ?? 'n/a'}), energy: ${summary.dominantEnergy || 'n/a'}` : 'no direct matches');
+
+      results.push({
+        id: u.id,
+        name: u.name,
+        blurb,
+        derivedMood: mood,
+        context,
+        suggestion: top,
+        summary,
+        user: {
+          skillLevel: u.skillLevel,
+          playingExperience: u.playingExperience,
+          practiceFrequency: u.practiceFrequency,
+          preferredDifficulty: u.preferredDifficulty,
+          genrePreferences: u.genrePreferences
+        }
+      });
+    }
+
+    res.json({ users: results });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Get all songs
@@ -226,6 +296,25 @@ app.get('/api/demo/users', (req, res) => {
   }
 });
 
+// Lightweight user summaries for clickable demo
+app.get('/api/demo/users-simple', (req, res) => {
+  try {
+    const users = datasetLoader.getMockUserProfiles().map(u => ({
+      id: u.id,
+      name: u.name,
+      habits: {
+        experience: u.playingExperience,
+        frequency: u.practiceFrequency,
+        genres: u.genrePreferences.join(', '),
+        preferredDifficulty: `${Math.min(...u.preferredDifficulty)}-${Math.max(...u.preferredDifficulty)}`
+      }
+    }));
+    res.json({ users });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/demo/contexts', (req, res) => {
   try {
     const contexts = datasetLoader.getMockContextScenarios();
@@ -254,6 +343,24 @@ app.get('/api/demo/dataset-stats', (req, res) => {
       });
     }).catch(error => {
       res.status(500).json({ error: error.message });
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Import local CSV (e.g., "song metadata (2).csv") and use it as active dataset
+app.post('/api/import/local-csv', async (req, res) => {
+  try {
+    const { path: csvPath = 'song metadata (2).csv' } = req.body || {};
+    await datasetLoader.loadFromLocalCsv(csvPath);
+    // Share loader with all clients
+    global.__YS_SHARED_DATASET_LOADER = datasetLoader;
+    const stats = datasetLoader.getDatasetStats();
+    res.json({
+      message: `Loaded local CSV: ${csvPath}`,
+      totalSongs: stats.totalSongs,
+      stats
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -443,6 +550,11 @@ app.get('/api/mood/songs/:moodCategory', async (req, res) => {
     const client = new YousicianClient();
     await client.ensureDatasetLoaded();
     
+    // Ensure unified mood profiles are created
+    if (client.datasetLoader.unifiedMoodProfiles.length === 0) {
+      await client.datasetLoader.createUnifiedMoodProfiles({ maxSongs: 50 });
+    }
+    
     const songs = client.datasetLoader.getSongsByUnifiedMood(moodCategory, parseInt(limit));
     
     res.json({
@@ -450,6 +562,46 @@ app.get('/api/mood/songs/:moodCategory', async (req, res) => {
       moodCategory,
       count: songs.length,
       songs
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Simple user suggestion: provide a mood and get 1 top suggestion with reasoning
+app.get('/api/demo/user-suggestion', async (req, res) => {
+  try {
+    const { userId, mood = 'neutral', timeOfDay, availableTime = 15, goals = 'relax' } = req.query;
+    const users = datasetLoader.getMockUserProfiles();
+    const user = users.find(u => u.id === userId) || users[0];
+
+    const client = new YousicianClient();
+    await client.ensureDatasetLoaded();
+
+    const context = {
+      mood,
+      timeOfDay: timeOfDay || new MoodExplorer().getTimeSlot(new Date().getHours()),
+      availableTime: parseInt(availableTime),
+      goals,
+      exploreNewMoods: true
+    };
+
+    const explorer = new MoodExplorer();
+    const recs = await explorer.getContextualRecommendations(user, context);
+    const top = recs[0] || null;
+
+    res.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        habits: {
+          experience: user.playingExperience,
+          frequency: user.practiceFrequency,
+          preferredDifficulty: user.preferredDifficulty
+        }
+      },
+      context,
+      suggestion: top
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -540,7 +692,8 @@ app.use(errorHandler);
 // Start server
 app.listen(PORT, () => {
   console.log(`Song Mood Explorer API running on port ${PORT}`);
-  console.log(`Visit http://localhost:${PORT} for API documentation`);
+  console.log(`Open http://localhost:${PORT}/basic-demo.html for the demo`);
+  console.log(`API docs: http://localhost:${PORT}/api`);
 });
 
 module.exports = app;
