@@ -1,18 +1,36 @@
 const axios = require('axios');
+const DatasetLoader = require('./dataset-loader');
 require('dotenv').config();
 
 class YousicianClient {
   constructor() {
     this.baseURL = process.env.YOUSICIAN_BASE_URL || 'https://api.yousician.com';
     this.apiKey = process.env.YOUSICIAN_API_KEY;
+    this.useRealAPI = process.env.USE_REAL_API === 'true';
     
-    this.client = axios.create({
-      baseURL: this.baseURL,
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
+    // Initialize dataset loader for mock data
+    this.datasetLoader = new DatasetLoader();
+    this.datasetLoaded = false;
+    
+    if (this.useRealAPI) {
+      this.client = axios.create({
+        baseURL: this.baseURL,
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
+  }
+
+  /**
+   * Ensure dataset is loaded for mock mode
+   */
+  async ensureDatasetLoaded() {
+    if (!this.datasetLoaded && !this.useRealAPI) {
+      await this.datasetLoader.loadSongDataset();
+      this.datasetLoaded = true;
+    }
   }
 
   /**
@@ -22,8 +40,14 @@ class YousicianClient {
    */
   async getSongs(filters = {}) {
     try {
-      const response = await this.client.get('/songs', { params: filters });
-      return response.data;
+      if (this.useRealAPI) {
+        const response = await this.client.get('/songs', { params: filters });
+        return response.data;
+      } else {
+        // Use mock data for proof of concept
+        await this.ensureDatasetLoaded();
+        return this.datasetLoader.getSongs(filters);
+      }
     } catch (error) {
       console.error('Error fetching songs:', error.message);
       throw error;
@@ -43,8 +67,14 @@ class YousicianClient {
    */
   async getSongById(songId) {
     try {
-      const response = await this.client.get(`/songs/${songId}`);
-      return response.data;
+      if (this.useRealAPI) {
+        const response = await this.client.get(`/songs/${songId}`);
+        return response.data;
+      } else {
+        // Use mock data for proof of concept
+        await this.ensureDatasetLoaded();
+        return this.datasetLoader.getSongById(songId);
+      }
     } catch (error) {
       console.error(`Error fetching song ${songId}:`, error.message);
       throw error;
@@ -58,8 +88,21 @@ class YousicianClient {
    */
   async getRecommendations(userProfile) {
     try {
-      const response = await this.client.post('/recommendations', userProfile);
-      return response.data;
+      if (this.useRealAPI) {
+        const response = await this.client.post('/recommendations', userProfile);
+        return response.data;
+      } else {
+        // Mock comfort zone recommendations based on user preferences
+        await this.ensureDatasetLoaded();
+        const filters = {
+          genre_tags: userProfile.genrePreferences,
+          min_difficulty: Math.max(1, userProfile.skillLevel - 1),
+          max_difficulty: userProfile.skillLevel + 1,
+          instrument_fit: userProfile.instrument,
+          limit: 10
+        };
+        return this.datasetLoader.getSongs(filters);
+      }
     } catch (error) {
       console.error('Error fetching recommendations:', error.message);
       throw error;
@@ -73,8 +116,14 @@ class YousicianClient {
    */
   async searchSongs(searchParams) {
     try {
-      const response = await this.client.get('/songs/search', { params: searchParams });
-      return response.data;
+      if (this.useRealAPI) {
+        const response = await this.client.get('/songs/search', { params: searchParams });
+        return response.data;
+      } else {
+        // Use mock data search
+        await this.ensureDatasetLoaded();
+        return this.datasetLoader.getSongs(searchParams);
+      }
     } catch (error) {
       console.error('Error searching songs:', error.message);
       throw error;

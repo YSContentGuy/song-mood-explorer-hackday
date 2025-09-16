@@ -1,6 +1,6 @@
 # Song Mood Explorer - Hackday Project
 
-A Node.js API for exploring song moods using the Yousician API. This project provides endpoints to search songs by mood, get mood-based recommendations, and analyze mood patterns across multiple songs.
+A Node.js API for exploring song moods using Yousician's song database. This project provides contextual recommendations that go beyond comfort zone algorithms by incorporating variable factors like mood, time, goals, and inspiration. Built as a proof of concept with mock data, ready for integration with Pavel's 100k song dataset.
 
 ## Features
 
@@ -27,8 +27,10 @@ A Node.js API for exploring song moods using the Yousician API. This project pro
 
 3. **Environment Configuration**
    - Copy `.env.example` to `.env`
-   - Add your Yousician API key:
+   - For proof of concept (default): Set `USE_REAL_API=false`
+   - For real Yousician data: Set `USE_REAL_API=true` and add your API key
    ```
+   USE_REAL_API=false
    YOUSICIAN_API_KEY=your_api_key_here
    YOUSICIAN_BASE_URL=https://api.yousician.com
    PORT=3000
@@ -61,19 +63,43 @@ A Node.js API for exploring song moods using the Yousician API. This project pro
 - `POST /mood/analyze-patterns` - Analyze user mood patterns from play history
 - `GET /mood/suggestions` - Get mood suggestions based on time and context
 
+### Demo Endpoints (Proof of Concept)
+- `GET /demo/users` - View artificial user profiles for testing
+- `GET /demo/contexts` - View context scenarios for mood recommendations
+- `GET /demo/dataset-stats` - View mock dataset statistics
+- `POST /demo/full-recommendation` - Complete recommendation flow demo
+
 ## Project Structure
 
 ```
 ├── src/
-│   ├── yousician-client.js    # Yousician API client with real data structure
-│   └── mood-explorer.js       # Contextual mood analysis and recommendations
-├── index.js                   # Express server with contextual endpoints
+│   ├── yousician-client.js    # API client (mock + real data modes)
+│   ├── mood-explorer.js       # Contextual mood analysis and recommendations
+│   ├── dataset-loader.js      # Dataset management (ready for Pavel's data)
+│   └── mock-data.js          # Sample songs and user profiles for PoC
+├── index.js                   # Express server with demo endpoints
 ├── package.json              # Dependencies and scripts
 ├── .env.example              # Environment variables template
 └── README.md                 # This file
 ```
 
 ## Example Usage
+
+### Demo: Full recommendation flow with artificial users:
+```bash
+curl -X POST "http://localhost:3000/demo/full-recommendation" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "user_intermediate",
+    "contextId": "weekend_challenge"
+  }'
+```
+
+### View available demo users and contexts:
+```bash
+curl "http://localhost:3000/demo/users"
+curl "http://localhost:3000/demo/contexts"
+```
 
 ### Get contextual recommendations beyond comfort zone:
 ```bash
@@ -114,13 +140,26 @@ curl -X POST "http://localhost:3000/mood/analyze-patterns" \
   }'
 ```
 
+## Data Integration
+
+### Current Status: Proof of Concept
+- **Mock Data**: 8 sample songs with realistic Yousician metadata structure
+- **Artificial Users**: 3 user profiles (beginner, intermediate, advanced)
+- **Context Scenarios**: 4 test scenarios for different moods/times/goals
+
+### Next Steps: Pavel's Dataset Integration
+- Ready to integrate ~100k songs from Pavel's dataset
+- Dataset loader prepared for fast processing of large song collections
+- Maintains same API interface for seamless transition
+
 ## Development
 
 - Uses Express.js for the REST API
-- Axios for HTTP requests to Yousician API
+- Mock data mode for immediate testing (no API keys required)
+- Real API mode ready for Yousician integration
 - CORS enabled for cross-origin requests
 - Environment variables for configuration
 
 ## Contributing
 
-This is a hackday project. Feel free to contribute and experiment!
+This is a hackday project focused on contextual music recommendations beyond comfort zones. The proof of concept demonstrates the "mapping model" for how variable factors (mood, time, goals) can enhance existing recommendation algorithms.

@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const YousicianClient = require('./src/yousician-client');
 const MoodExplorer = require('./src/mood-explorer');
+const DatasetLoader = require('./src/dataset-loader');
 require('dotenv').config();
 
 const app = express();
@@ -13,6 +14,7 @@ app.use(express.json());
 
 // Initialize services
 const moodExplorer = new MoodExplorer();
+const datasetLoader = new DatasetLoader();
 
 // Routes
 app.get('/', (req, res) => {
@@ -153,6 +155,77 @@ app.get('/mood/suggestions', async (req, res) => {
     };
     
     res.json(suggestions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Demo endpoints for proof of concept
+app.get('/demo/users', (req, res) => {
+  try {
+    const users = datasetLoader.getMockUserProfiles();
+    res.json({
+      message: 'Artificial user profiles for proof of concept',
+      users
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/demo/contexts', (req, res) => {
+  try {
+    const contexts = datasetLoader.getMockContextScenarios();
+    res.json({
+      message: 'Context scenarios for testing mood recommendations',
+      contexts
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/demo/dataset-stats', (req, res) => {
+  try {
+    const client = new YousicianClient();
+    client.ensureDatasetLoaded().then(() => {
+      const stats = client.datasetLoader.getDatasetStats();
+      res.json({
+        message: 'Mock dataset statistics (will be replaced with Pavel\'s 100k songs)',
+        stats
+      });
+    }).catch(error => {
+      res.status(500).json({ error: error.message });
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Demo: Full contextual recommendation flow
+app.post('/demo/full-recommendation', async (req, res) => {
+  try {
+    const { userId, contextId } = req.body;
+    
+    const users = datasetLoader.getMockUserProfiles();
+    const contexts = datasetLoader.getMockContextScenarios();
+    
+    const user = users.find(u => u.id === userId) || users[0];
+    const context = contexts.find(c => c.id === contextId) || contexts[0];
+    
+    const recommendations = await moodExplorer.getContextualRecommendations(user, context);
+    
+    res.json({
+      message: 'Full contextual recommendation demo',
+      selectedUser: user,
+      selectedContext: context,
+      recommendations,
+      explanation: {
+        comfortZone: 'Songs matching user\'s genre preferences and skill level',
+        contextual: 'Songs adjusted for mood, time, and goals',
+        scoring: 'Combined scoring based on mood alignment and context fit'
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
