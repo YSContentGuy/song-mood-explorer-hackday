@@ -3,10 +3,17 @@
  * Generates mood tags for songs with sparse metadata using AI
  */
 
+const axios = require('axios');
+require('dotenv').config();
+
 class LLMMoodEnhancer {
   constructor() {
     this.cache = new Map(); // Cache LLM responses to avoid duplicate calls
     this.moodTagsGenerated = 0;
+    // LLM config (optional). If OPENAI_API_KEY is set, we call OpenAI; otherwise we simulate.
+    this.provider = (process.env.LLM_PROVIDER || 'openai').toLowerCase();
+    this.openaiApiKey = process.env.OPENAI_API_KEY || null;
+    this.model = process.env.LLM_MODEL || 'gpt-4o-mini';
   }
 
   /**
@@ -23,8 +30,13 @@ class LLMMoodEnhancer {
     }
 
     try {
-      // Simulate LLM call with realistic mood inference
-      const moodData = await this.simulateLLMCall(song);
+      let moodData;
+      if (this.openaiApiKey && this.provider === 'openai') {
+        moodData = await this.generateMoodTagsOpenAI(song);
+      } else {
+        // Simulate LLM call with realistic mood inference
+        moodData = await this.simulateLLMCall(song);
+      }
       
       // Cache the result
       this.cache.set(cacheKey, moodData);
@@ -35,6 +47,83 @@ class LLMMoodEnhancer {
       console.error(`Error generating mood tags for ${song.SONG_TITLE}:`, error);
       return this.getFallbackMoodData();
     }
+  }
+
+  /**
+   * Call OpenAI Chat Completions to infer mood tags for a song.
+   */
+  async generateMoodTagsOpenAI(song) {
+    const artist = song.ARTIST_NAME || 'Unknown';
+    const title = song.SONG_TITLE || 'Unknown';
+    const bpm = song.QUARTER_NOTES_PER_MINUTE || song.BEATS_PER_MINUTE || '';
+    const duration = song['MAX(EXERCISE_LENGTH)'] || '';
+
+    const system = `You are a music tagging assistant. Output concise JSON only.`;
+    const user = `Infer mood tags for the song below. Return a JSON object with:
+{
+  "generatedTags": ["..."],
+  "energyLevel": "very_low|low|medium|high|very_high",
+  "moodCategory": "happy|sad|energetic|calm|romantic|nostalgic|focused|social|neutral",
+  "confidence": 0..1,
+  "reasoning": "one short sentence"
+}
+Song: ${title}
+Artist: ${artist}
+Tempo_BPM: ${bpm}
+Duration_sec: ${duration}`;
+
+    const body = {
+      model: this.model,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ],
+      temperature: 0.3
+    };
+
+    const resp = await axios.post('https://api.openai.com/v1/chat/completions', body, {
+      headers: {
+        'Authorization': `Bearer ${this.openaiApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    });
+
+    const content = resp?.data?.choices?.[0]?.message?.content || '';
+    const parsed = this.parseLLMJson(content);
+    if (!parsed) {
+      throw new Error('Failed to parse LLM JSON');
+    }
+
+    // Normalize fields
+    const allowedEnergy = ['very_low', 'low', 'medium', 'high', 'very_high'];
+    const allowedMood = ['happy','sad','energetic','calm','romantic','nostalgic','focused','social','neutral'];
+    if (!allowedEnergy.includes(parsed.energyLevel)) parsed.energyLevel = 'medium';
+    if (!allowedMood.includes(parsed.moodCategory)) parsed.moodCategory = 'neutral';
+
+    return {
+      generatedTags: Array.isArray(parsed.generatedTags) ? parsed.generatedTags : [],
+      energyLevel: parsed.energyLevel,
+      moodCategory: parsed.moodCategory,
+      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.6,
+      reasoning: parsed.reasoning || 'LLM-based inference',
+      source: 'openai'
+    };
+  }
+
+  /**
+   * Extract JSON from a potentially verbose LLM response.
+   */
+  parseLLMJson(text) {
+    if (!text) return null;
+    // Try direct JSON
+    try { return JSON.parse(text); } catch (_) {}
+    // Try to find a JSON block
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      try { return JSON.parse(match[0]); } catch (_) {}
+    }
+    return null;
   }
 
   /**

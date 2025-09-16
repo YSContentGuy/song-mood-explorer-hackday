@@ -117,6 +117,32 @@ This generates `public/story-static.html`, which shows the three users, their in
 - `npm run build:story` — build static demo using bundled YS dataset
 - `npm run build:story:csv` — build static demo using `song metadata (2).csv`
 
+## Enable Real LLM Tagging (optional)
+
+By default, LLM mood tags are simulated for reliability in a hackday setting. To call a real LLM:
+
+1) Set env vars in `.env` (or your runtime environment):
+```
+OPENAI_API_KEY=sk-...
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4o-mini
+```
+2) Start the server and enhance a subset of songs:
+```
+npm run dev
+curl -X POST http://localhost:3000/api/llm/enhance \
+  -H 'Content-Type: application/json' \
+  -d '{"maxSongs": 15, "onlySparseTags": true}' | jq
+```
+3) Inspect results / fusion:
+```
+curl http://localhost:3000/api/llm/enhanced-songs | jq
+curl -X POST http://localhost:3000/api/mood/unified-profiles \
+  -H 'Content-Type: application/json' \
+  -d '{"maxSongs": 15, "useEnhancedSongs": true}' | jq
+```
+If the env keys aren’t set, the system falls back to a local, deterministic simulation.
+
 ## Pushing Changes
 
 If you’re happy with the demo, commit and push:
