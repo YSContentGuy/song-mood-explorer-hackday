@@ -4,11 +4,13 @@ A Node.js API for exploring song moods using the Yousician API. This project pro
 
 ## Features
 
-- 🎵 Fetch songs from Yousician API
-- 🎭 Analyze song moods and patterns
-- 🔍 Search songs by mood criteria
-- 💡 Get mood-based song recommendations
-- 📊 Aggregate mood statistics across multiple songs
+- 🎵 Fetch songs from Yousician API with rich metadata (artist, genre, difficulty, style tags)
+- 🎭 Contextual recommendations beyond comfort zone based on variable factors
+- 🔍 Search songs by mood with intelligent style tag mapping
+- 💡 Time-aware recommendations (morning energy vs evening calm)
+- 📊 Analyze user mood patterns from playing history
+- ⚡ Goal-based filtering (challenge vs relax modes)
+- 🕒 Duration-aware suggestions based on available practice time
 
 ## Setup
 
@@ -53,18 +55,19 @@ A Node.js API for exploring song moods using the Yousician API. This project pro
 - `GET /songs/:id` - Get specific song by ID
 - `GET /songs/:id/mood` - Get mood analysis for a specific song
 
-### Mood Exploration
-- `GET /mood/search?mood=happy&limit=10` - Search songs by mood
-- `GET /mood/recommendations?currentMood=sad` - Get mood-based recommendations
-- `POST /mood/analyze` - Analyze mood patterns (send `{"songIds": ["id1", "id2"]}`)
+### Contextual Mood Exploration
+- `POST /mood/contextual-recommendations` - Get context-aware recommendations beyond comfort zone
+- `GET /mood/search?mood=happy&limit=10` - Search songs by mood with style tag mapping
+- `POST /mood/analyze-patterns` - Analyze user mood patterns from play history
+- `GET /mood/suggestions` - Get mood suggestions based on time and context
 
 ## Project Structure
 
 ```
 ├── src/
-│   ├── yousician-client.js    # Yousician API client
-│   └── mood-explorer.js       # Mood analysis logic
-├── index.js                   # Express server and routes
+│   ├── yousician-client.js    # Yousician API client with real data structure
+│   └── mood-explorer.js       # Contextual mood analysis and recommendations
+├── index.js                   # Express server with contextual endpoints
 ├── package.json              # Dependencies and scripts
 ├── .env.example              # Environment variables template
 └── README.md                 # This file
@@ -72,21 +75,43 @@ A Node.js API for exploring song moods using the Yousician API. This project pro
 
 ## Example Usage
 
-### Search for happy songs:
+### Get contextual recommendations beyond comfort zone:
 ```bash
-curl "http://localhost:3000/mood/search?mood=happy&limit=5"
-```
-
-### Get recommendations for someone feeling sad:
-```bash
-curl "http://localhost:3000/mood/recommendations?currentMood=sad"
-```
-
-### Analyze mood patterns:
-```bash
-curl -X POST "http://localhost:3000/mood/analyze" \
+curl -X POST "http://localhost:3000/mood/contextual-recommendations" \
   -H "Content-Type: application/json" \
-  -d '{"songIds": ["song1", "song2", "song3"]}'
+  -d '{
+    "userProfile": {
+      "skillLevel": 3,
+      "genrePreferences": ["rock", "pop"],
+      "instrument": "guitar"
+    },
+    "context": {
+      "mood": "energetic",
+      "timeOfDay": "afternoon",
+      "availableTime": 20,
+      "goals": "challenge",
+      "exploreNewMoods": true
+    }
+  }'
+```
+
+### Get mood suggestions for current context:
+```bash
+curl "http://localhost:3000/mood/suggestions?timeOfDay=evening&availableTime=10&goals=relax"
+```
+
+### Analyze mood patterns from play history:
+```bash
+curl -X POST "http://localhost:3000/mood/analyze-patterns" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "playHistory": [
+      {
+        "song": { "style_tags": ["upbeat", "rock"] },
+        "timestamp": "2024-01-01T10:00:00Z"
+      }
+    ]
+  }'
 ```
 
 ## Development

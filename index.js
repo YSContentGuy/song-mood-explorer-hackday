@@ -17,16 +17,27 @@ const moodExplorer = new MoodExplorer();
 // Routes
 app.get('/', (req, res) => {
   res.json({
-    message: 'Song Mood Explorer API',
-    version: '1.0.0',
+    message: 'Song Mood Explorer API - Beyond Comfort Zone Recommendations',
+    version: '2.0.0',
+    description: 'Contextual song recommendations based on mood, time, goals, and variable factors',
     endpoints: {
-      '/songs': 'GET - Get all songs',
-      '/songs/:id': 'GET - Get song by ID',
+      '/songs': 'GET - Get all songs with filters',
+      '/songs/:id': 'GET - Get song by ID with full metadata',
       '/songs/:id/mood': 'GET - Get song mood analysis',
+      '/mood/contextual-recommendations': 'POST - Get context-aware recommendations beyond comfort zone',
       '/mood/search': 'GET - Search songs by mood',
-      '/mood/recommendations': 'GET - Get mood-based recommendations',
-      '/mood/analyze': 'POST - Analyze mood patterns'
-    }
+      '/mood/analyze-patterns': 'POST - Analyze user mood patterns from play history',
+      '/mood/suggestions': 'GET - Get mood suggestions based on time and context',
+      '/health': 'GET - Health check'
+    },
+    contextualFactors: [
+      'Time of day/week/year',
+      'Available practice time',
+      'Goals (challenge vs relax)',
+      'Current mood',
+      'Inspiration sources',
+      'Energy levels'
+    ]
   });
 });
 
@@ -63,7 +74,28 @@ app.get('/songs/:id/mood', async (req, res) => {
   }
 });
 
-// Search songs by mood
+// Get contextual recommendations beyond comfort zone
+app.post('/mood/contextual-recommendations', async (req, res) => {
+  try {
+    const { userProfile, context } = req.body;
+    if (!userProfile || !context) {
+      return res.status(400).json({ 
+        error: 'userProfile and context are required',
+        example: {
+          userProfile: { skillLevel: 3, genrePreferences: ['rock', 'pop'], instrument: 'guitar' },
+          context: { mood: 'happy', timeOfDay: 'afternoon', availableTime: 20, goals: 'challenge' }
+        }
+      });
+    }
+    
+    const recommendations = await moodExplorer.getContextualRecommendations(userProfile, context);
+    res.json(recommendations);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Search songs by mood (simplified)
 app.get('/mood/search', async (req, res) => {
   try {
     const { mood, limit } = req.query;
@@ -71,38 +103,56 @@ app.get('/mood/search', async (req, res) => {
       return res.status(400).json({ error: 'Mood parameter is required' });
     }
     
-    const songs = await moodExplorer.findSongsByMood(mood, parseInt(limit) || 10);
+    const client = new YousicianClient();
+    const searchParams = {
+      style_tags: moodExplorer.getStyleTagsForMood(mood),
+      limit: parseInt(limit) || 10
+    };
+    
+    const songs = await client.searchSongs(searchParams);
     res.json(songs);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get mood-based recommendations
-app.get('/mood/recommendations', async (req, res) => {
+// Analyze user's mood patterns from play history
+app.post('/mood/analyze-patterns', async (req, res) => {
   try {
-    const { currentMood } = req.query;
-    if (!currentMood) {
-      return res.status(400).json({ error: 'currentMood parameter is required' });
+    const { playHistory } = req.body;
+    if (!playHistory || !Array.isArray(playHistory)) {
+      return res.status(400).json({ 
+        error: 'playHistory array is required',
+        example: [{ song: { style_tags: ['upbeat', 'rock'] }, timestamp: '2024-01-01T10:00:00Z' }]
+      });
     }
     
-    const recommendations = await moodExplorer.getMoodRecommendations(currentMood);
-    res.json(recommendations);
+    const analysis = await moodExplorer.analyzeMoodPatterns(playHistory);
+    res.json(analysis);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Analyze mood patterns
-app.post('/mood/analyze', async (req, res) => {
+// Get mood suggestions based on time and context
+app.get('/mood/suggestions', async (req, res) => {
   try {
-    const { songIds } = req.body;
-    if (!songIds || !Array.isArray(songIds)) {
-      return res.status(400).json({ error: 'songIds array is required' });
-    }
+    const { timeOfDay, availableTime, goals } = req.query;
     
-    const analysis = await moodExplorer.analyzeMoodPatterns(songIds);
-    res.json(analysis);
+    const context = {
+      timeOfDay: timeOfDay || moodExplorer.getTimeSlot(new Date().getHours()),
+      availableTime: parseInt(availableTime) || 15,
+      goals: goals || 'relax'
+    };
+    
+    const suggestions = {
+      recommendedMoods: moodExplorer.getStyleTagsForMood(context.goals),
+      energyLevel: moodExplorer.getEnergyLevelForTime(context.timeOfDay),
+      maxDuration: moodExplorer.getDurationForAvailableTime(context.availableTime),
+      context
+    };
+    
+    res.json(suggestions);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
