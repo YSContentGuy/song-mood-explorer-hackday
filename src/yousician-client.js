@@ -8,9 +8,15 @@ class YousicianClient {
     this.apiKey = process.env.YOUSICIAN_API_KEY;
     this.useRealAPI = process.env.USE_REAL_API === 'true';
     
-    // Initialize dataset loader for mock data
-    this.datasetLoader = new DatasetLoader();
-    this.datasetLoaded = false;
+    // Initialize dataset loader (shared across app if available)
+    if (global.__YS_SHARED_DATASET_LOADER) {
+      this.datasetLoader = global.__YS_SHARED_DATASET_LOADER;
+      this.datasetLoaded = this.datasetLoader.isLoaded;
+    } else {
+      this.datasetLoader = new DatasetLoader();
+      this.datasetLoaded = false;
+      global.__YS_SHARED_DATASET_LOADER = this.datasetLoader;
+    }
     
     if (this.useRealAPI) {
       this.client = axios.create({
@@ -95,13 +101,22 @@ class YousicianClient {
         // Mock comfort zone recommendations based on user preferences
         await this.ensureDatasetLoaded();
         const filters = {
-          genre_tags: userProfile.genrePreferences,
           min_difficulty: Math.max(1, userProfile.skillLevel - 1),
           max_difficulty: userProfile.skillLevel + 1,
           instrument_fit: userProfile.instrument,
           limit: 10
         };
-        return this.datasetLoader.getSongs(filters);
+        let results = this.datasetLoader.getSongs(filters);
+        if (results.length === 0) {
+          // Relax constraints progressively for better demo coverage
+          const relaxed = { ...filters, min_difficulty: Math.max(1, (userProfile.skillLevel || 3) - 2), max_difficulty: (userProfile.skillLevel || 3) + 2 };
+          results = this.datasetLoader.getSongs(relaxed);
+        }
+        if (results.length === 0) {
+          const noInstr = { min_difficulty: 1, max_difficulty: 10, limit: filters.limit };
+          results = this.datasetLoader.getSongs(noInstr);
+        }
+        return results;
       }
     } catch (error) {
       console.error('Error fetching recommendations:', error.message);

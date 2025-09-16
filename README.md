@@ -45,29 +45,23 @@ A Node.js API for exploring song moods using Yousician's song database. This pro
    npm start
    ```
 
-## API Endpoints
+## Quick Demo
 
-### Base URL: `http://localhost:3000`
+Run the server and open the one-page demo.
 
-- `GET /` - API documentation and available endpoints
-- `GET /health` - Health check endpoint
+1) Install + run
+```
+npm install
+npm run dev
+```
 
-### Songs
-- `GET /songs` - Get all songs (with optional query parameters)
-- `GET /songs/:id` - Get specific song by ID
-- `GET /songs/:id/mood` - Get mood analysis for a specific song
+2) Open the demo
+```
+http://localhost:3000/basic-demo.html
+```
+What it does: three user buttons → click one to see a short blurb (level + tastes), an inferred mood, and a single song recommendation with a score.
 
-### Contextual Mood Exploration
-- `POST /mood/contextual-recommendations` - Get context-aware recommendations beyond comfort zone
-- `GET /mood/search?mood=happy&limit=10` - Search songs by mood with style tag mapping
-- `POST /mood/analyze-patterns` - Analyze user mood patterns from play history
-- `GET /mood/suggestions` - Get mood suggestions based on time and context
-
-### Demo Endpoints (Proof of Concept)
-- `GET /demo/users` - View artificial user profiles for testing
-- `GET /demo/contexts` - View context scenarios for mood recommendations
-- `GET /demo/dataset-stats` - View mock dataset statistics
-- `POST /demo/full-recommendation` - Complete recommendation flow demo
+API docs: `http://localhost:3000/api`  •  Health: `http://localhost:3000/health`
 
 ## Project Structure
 
@@ -83,74 +77,60 @@ A Node.js API for exploring song moods using Yousician's song database. This pro
 └── README.md                 # This file
 ```
 
-## Example Usage
+## Example API Calls
 
-### Demo: Full recommendation flow with artificial users:
 ```bash
-curl -X POST "http://localhost:3000/demo/full-recommendation" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userId": "user_intermediate",
-    "contextId": "weekend_challenge"
-  }'
+# Users overview (blurbs + inferred moods + top suggestion)
+curl http://localhost:3000/api/demo/users-overview | jq
+
+# Single-user suggestion (use inferred mood from the overview)
+curl "http://localhost:3000/api/demo/user-suggestion?userId=user_intermediate&mood=relaxed&timeOfDay=evening&availableTime=20&goals=relax" | jq
+
+# Import your CSV
+curl -X POST http://localhost:3000/api/import/local-csv \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"song metadata (2).csv"}' | jq
 ```
 
-### View available demo users and contexts:
-```bash
-curl "http://localhost:3000/demo/users"
-curl "http://localhost:3000/demo/contexts"
+## Offline Static Demo (No Server)
+
+Build a self-contained HTML you can open directly in a browser.
+
+- Use your CSV:
+```
+npm run build:story:csv
+open public/story-static.html         # macOS
+# or: start "" public\story-static.html   # Windows
 ```
 
-### Get contextual recommendations beyond comfort zone:
-```bash
-curl -X POST "http://localhost:3000/mood/contextual-recommendations" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userProfile": {
-      "skillLevel": 3,
-      "genrePreferences": ["rock", "pop"],
-      "instrument": "guitar"
-    },
-    "context": {
-      "mood": "energetic",
-      "timeOfDay": "afternoon",
-      "availableTime": 20,
-      "goals": "challenge",
-      "exploreNewMoods": true
-    }
-  }'
+- Use the bundled YS dataset:
+```
+npm run build:story
+open public/story-static.html
 ```
 
-### Get mood suggestions for current context:
-```bash
-curl "http://localhost:3000/mood/suggestions?timeOfDay=evening&availableTime=10&goals=relax"
-```
+This generates `public/story-static.html`, which shows the three users, their inferred mood/time/goal, and one suggested song each with a “Why this song” line.
 
-### Analyze mood patterns from play history:
-```bash
-curl -X POST "http://localhost:3000/mood/analyze-patterns" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "playHistory": [
-      {
-        "song": { "style_tags": ["upbeat", "rock"] },
-        "timestamp": "2024-01-01T10:00:00Z"
-      }
-    ]
-  }'
+## Scripts
+
+- `npm run dev` — start server at `http://localhost:3000`
+- `npm run build:story` — build static demo using bundled YS dataset
+- `npm run build:story:csv` — build static demo using `song metadata (2).csv`
+
+## Pushing Changes
+
+If you’re happy with the demo, commit and push:
+```
+git add -A
+git commit -m "Streamlined demo: basic one-page UI + static story build"
+git push origin main
 ```
 
 ## Data Integration
 
-### Current Status: Proof of Concept
-- **Mock Data**: 8 sample songs with realistic Yousician metadata structure
-- **Artificial Users**: 3 user profiles (beginner, intermediate, advanced)
-- **Context Scenarios**: 4 test scenarios for different moods/times/goals
-
-### Next Steps: Pavel's Dataset Integration
-- Ready to integrate ~100k songs from Pavel's dataset
-- Dataset loader prepared for fast processing of large song collections
-- Maintains same API interface for seamless transition
+### Current Status
+- Uses the provided CSV (`data/yousician_songs.csv`) by default when `USE_REAL_YS_DATA=true`.
+- You can switch to your own CSV via `/api/import/local-csv`.
 
 ## Development
 

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Song Mood Explorer — Basic Demo</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#f5f7fb; margin:0; padding:24px; }
+    .wrap { max-width: 1000px; margin: 0 auto; }
+    h1 { margin:0 0 6px; }
+    .sub { color:#666; margin-bottom: 16px; }
+    .buttons { display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
+    .userbtn { background:#fff; border:2px solid #e9ecf3; border-radius:14px; padding:16px; text-align:center; cursor:pointer; font-size:16px; }
+    .userbtn:hover { box-shadow:0 6px 18px rgba(0,0,0,0.06); }
+    .userbtn .mini { display:block; color:#777; font-size:12px; margin-top:6px; }
+    .panel { margin-top:16px; background:#fff; border:1px solid #eee; border-radius:12px; padding:16px; }
+    .row { margin-top:8px; }
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+    .title { font-weight:700; font-size:18px; }
+    .muted { color:#777; font-size:12px; }
+    .song { margin-top:8px; border-left:4px solid #667eea; padding-left:10px; }
+    @media (max-width: 800px) { .buttons { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Three Users</h1>
+    <div class="sub">Three buttons. Click one. You’ll see their blurb, mood, and a song.</div>
+    <div id="buttons" class="buttons">Loading…</div>
+    <div id="panel" class="panel" style="display:none"></div>
+  </div>
+  <script>
+    let overview = null;
+    async function load() {
+      const buttons = document.getElementById('buttons');
+      buttons.textContent = 'Loading…';
+      try {
+        const res = await fetch('/api/demo/users-overview');
+        overview = await res.json();
+        renderButtons();
+      } catch (e) {
+        buttons.textContent = 'Error loading data';
+      }
+    }
+    function renderButtons(){
+      const buttons = document.getElementById('buttons');
+      buttons.innerHTML = '';
+      (overview.users || []).forEach(u => {
+        const b = document.createElement('div');
+        b.className = 'userbtn';
+        const blurbMini = (u.blurb||'').split(' · ').slice(0,2).join(' · ');
+        b.innerHTML = `${u.name}<span class='mini'>${blurbMini}</span>`;
+        b.onclick = () => showUser(u.id);
+        buttons.appendChild(b);
+      });
+    }
+    function whyLine(item, suggestion){
+      const s = suggestion || {};
+      const b = s.scoringBreakdown || {};
+      const parts = [];
+      if (item?.context) parts.push(item.context.timeOfDay + ', ' + item.context.goals);
+      if (typeof s.duration === 'number' && item?.context?.availableTime) {
+        const mins = Math.round(s.duration/60);
+        parts.push(mins+ ' min fits ~' + item.context.availableTime + ' min');
+      }
+      if (s.energy_level) parts.push(s.energy_level + ' energy');
+      if (typeof s.difficulty_level === 'number' && item?.user?.skillLevel) {
+        const diff = s.difficulty_level - item.user.skillLevel;
+        const rel = diff === 0 ? 'at your level' : (diff > 0 ? ('+'+diff+' harder') : (Math.abs(diff)+' easier'));
+        parts.push(rel);
+      }
+      if (typeof b.moodAlignment === 'number') parts.push('mood match ' + Math.round(b.moodAlignment*100) + '%');
+      return parts.join(' · ');
+    }
+
+    async function showUser(userId){
+      const panel = document.getElementById('panel');
+      panel.style.display = 'block';
+      panel.innerHTML = '<div class="muted">Working…</div>';
+      const item = (overview.users || []).find(x => x.id === userId);
+      let suggestion = item?.suggestion || null;
+      // If not present, fetch it using derived mood
+      if (!suggestion) {
+        const mood = item?.derivedMood || 'neutral';
+        const timeOfDay = item?.context?.timeOfDay || 'evening';
+        const goals = item?.context?.goals || (mood === 'energetic' ? 'challenge' : 'relax');
+        const q = new URLSearchParams({ userId, mood, timeOfDay, availableTime: 20, goals });
+        const res = await fetch('/api/demo/user-suggestion?' + q.toString());
+        const data = await res.json();
+        suggestion = data.suggestion || null;
+      }
+      if (!item) { panel.innerHTML = '<div class="muted">User not found</div>'; return; }
+      if (!suggestion) {
+        panel.innerHTML = `<div class='title'>${item.name}</div>
+          <div class='muted'>${item.blurb}</div>
+          <div class='song'><em>No suggestion found</em></div>`;
+        return;
+      }
+      const prof = item.user || {};
+      const sum = item.summary || {};
+      const s = suggestion || {};
+      panel.innerHTML = `
+        <div class='title'>${item.name}</div>
+        <div class='grid2 row'>
+          <div>
+            <div><strong>Profile</strong></div>
+            <div class='muted'>Skill: ${prof.skillLevel ?? 'n/a'}</div>
+            <div class='muted'>Practice: ${prof.practiceFrequency || 'n/a'}</div>
+            <div class='muted'>Pref. difficulty: ${(prof.preferredDifficulty ? (Array.isArray(prof.preferredDifficulty)? prof.preferredDifficulty.join(', ') : prof.preferredDifficulty) : 'n/a')}</div>
+            <div class='muted'>Genres: ${(prof.genrePreferences||[]).join(', ')}</div>
+          </div>
+          <div>
+            <div><strong>Data overview</strong></div>
+            <div class='muted'>Matches: ${sum.count ?? 0}</div>
+            <div class='muted'>Avg difficulty: ${sum.avgDifficulty ?? 'n/a'}</div>
+            <div class='muted'>Energy: ${sum.dominantEnergy || 'n/a'}</div>
+            <div class='muted'>Top tags: ${(sum.topStyleTags||[]).slice(0,3).join(', ')}</div>
+          </div>
+        </div>
+        <div class='row muted'>Mood: ${item.derivedMood} · Time: ${item.context.timeOfDay} · Goal: ${item.context.goals}</div>
+        <div class='song row'><div><strong>${s.title || s.SONG_TITLE}</strong> — ${s.artist || s.ARTIST_NAME || 'Unknown'}</div>
+          <div class='muted'>Score: ${s.contextualScore ?? 'N/A'} · Energy: ${s.energy_level || 'n/a'} · Diff: ${s.difficulty_level ?? 'n/a'}</div>
+          <div class='muted'>${whyLine(item, s)}</div>
+        </div>
+      `;
+    }
+    load();
+  </script>
+</body>
+</html>
