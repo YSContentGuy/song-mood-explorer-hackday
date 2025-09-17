@@ -1,34 +1,18 @@
-[33m[nodemon] 3.1.10[39m
-[33m[nodemon] to restart at any time, enter `rs`[39m
-[33m[nodemon] watching path(s): *.*[39m
-[33m[nodemon] watching extensions: js,mjs,cjs,json[39m
-[32m[nodemon] starting `node index.js`[39m
 Loading local CSV dataset from song metadata (2).csv...
 Loaded 8930 songs from YS dataset
-node:events:496
-      throw er; // Unhandled 'error' event
-      ^
-
-Error: listen EADDRINUSE: address already in use :::3000
-    at Server.setupListenHandle [as _listen2] (node:net:1939:16)
-    at listenInCluster (node:net:1996:12)
-    at Server.listen (node:net:2101:7)
-    at Function.listen (/workspace/node_modules/express/lib/application.js:635:24)
-    at Object.<anonymous> (/workspace/index.js:820:5)
-    at Module._compile (node:internal/modules/cjs/loader:1730:14)
-    at Object..js (node:internal/modules/cjs/loader:1895:10)
-    at Module.load (node:internal/modules/cjs/loader:1465:32)
-    at Function._load (node:internal/modules/cjs/loader:1282:12)
-    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
-Emitted 'error' event on Server instance at:
-    at emitErrorNT (node:net:1975:8)
-    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
-  code: 'EADDRINUSE',
-  errno: -98,
-  syscall: 'listen',
-  address: '::',
-  port: 3000
-}
-
-Node.js v22.16.0
-[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+Song Mood Explorer API running on port 3000
+Open http://localhost:3000/basic-demo.html for the demo
+API docs: http://localhost:3000/api
+Behavioral Analysis (local CSV): 8930
+Starting LLM mood enhancement...
+Enhancing 50 songs with LLM-generated mood tags...
+[2025-09-17T10:39:07.051Z] GET /health - 200 (6ms)
+LLM Enhancement Progress: 10/50
+LLM Enhancement Progress: 20/50
+LLM Enhancement Progress: 30/50
+LLM Enhancement Progress: 40/50
+LLM Enhancement Progress: 50/50
+Successfully enhanced 50 songs with LLM mood tags
+Creating unified mood profiles for 50 songs...
+Unified mood profiles ready (50) in 5ms
+Dataset ready: Pavel CSV + LLM-enhanced tags merged.
