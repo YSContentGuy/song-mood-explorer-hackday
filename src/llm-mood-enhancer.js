@@ -57,6 +57,14 @@ class LLMMoodEnhancer {
     const title = song.SONG_TITLE || 'Unknown';
     const bpm = song.QUARTER_NOTES_PER_MINUTE || song.BEATS_PER_MINUTE || '';
     const duration = song['MAX(EXERCISE_LENGTH)'] || '';
+    const key = song.SONG_KEY_ROOT || '';
+    const mode = song.SONG_KEY_MODE || '';
+    const playCount = song.PLAY_COUNT || 0;
+    const pitchRange = (parseInt(song.HIGHEST_PITCH) || 0) - (parseInt(song.LOWEST_PITCH) || 0);
+    
+    // Key signature mood hints
+    const keyMoodHint = mode === 'major' ? 'Generally more uplifting/positive' : 
+                       mode === 'minor' ? 'Generally more emotional/melancholic' : '';
 
     const system = `You are a music tagging assistant. Output concise JSON only.`;
     const user = `Infer mood tags for the song below. Return a JSON object with:
@@ -70,7 +78,12 @@ class LLMMoodEnhancer {
 Song: ${title}
 Artist: ${artist}
 Tempo_BPM: ${bpm}
-Duration_sec: ${duration}`;
+Duration_sec: ${duration}
+Key: ${key} ${mode}${keyMoodHint ? ` (${keyMoodHint})` : ''}
+Pitch_Range: ${pitchRange} semitones
+Popularity: ${playCount} plays
+${song.GENRES ? `Genres: ${song.GENRES}` : ''}
+${song.TAGS ? `Tags: ${song.TAGS}` : ''}`;
 
     const body = {
       model: this.model,

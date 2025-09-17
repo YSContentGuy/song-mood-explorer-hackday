@@ -506,6 +506,18 @@ class DatasetLoader {
     if (pitchRange > 50) difficulty += 1;
     difficulty = Math.max(1, Math.min(10, difficulty));
 
+    // Key signature mood analysis
+    const keyMoodTags = [];
+    if (song.SONG_KEY_MODE === 'major') {
+      keyMoodTags.push('uplifting', 'positive');
+    } else if (song.SONG_KEY_MODE === 'minor') {
+      keyMoodTags.push('emotional', 'melancholic');
+    }
+
+    // Popularity scoring (logarithmic scale)
+    const playCount = parseInt(song.PLAY_COUNT) || 0;
+    const popularityScore = playCount > 0 ? Math.log(playCount + 1) / Math.log(1000000) : 0; // Normalize to 0-1 scale
+
     // Add a couple of derived tags from energy
     const derivedTags = [];
     if (energy_level === 'high' || energy_level === 'very_high') derivedTags.push('energetic');
@@ -515,11 +527,16 @@ class DatasetLoader {
       ...song,
       // Normalized fields
       genre_tags,
-      style_tags: [...new Set([...(style_tags || []), ...derivedTags])],
+      style_tags: [...new Set([...(style_tags || []), ...derivedTags, ...keyMoodTags])],
       duration,
       energy_level,
       difficulty_level: difficulty,
-      instrument_fit: 'guitar'
+      instrument_fit: 'guitar',
+      // Enhanced fields
+      popularity_score: popularityScore,
+      key_signature: `${song.SONG_KEY_ROOT || ''} ${song.SONG_KEY_MODE || ''}`.trim(),
+      pitch_range: pitchRange,
+      key_mood_tags: keyMoodTags
     };
   }
 

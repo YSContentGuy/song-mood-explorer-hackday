@@ -120,6 +120,10 @@ class MoodExplorer {
       const explorationScore = this.getExplorationScore(song, context);
       score += explorationScore * weights.exploration;
       
+      // Popularity scoring (proven appeal)
+      const popularityScore = this.getPopularityScore(song);
+      score += popularityScore * weights.popularity;
+      
       return {
         ...song,
         contextualScore: Math.round(score * 100) / 100,
@@ -130,6 +134,7 @@ class MoodExplorer {
           durationFit: Math.round(durationScore * 100) / 100,
           goalAlignment: Math.round(goalScore * 100) / 100,
           exploration: Math.round(explorationScore * 100) / 100,
+          popularity: Math.round(popularityScore * 100) / 100,
           weights: weights
         }
       };
@@ -164,12 +169,13 @@ class MoodExplorer {
   getContextualWeights(context) {
     // Dynamic weight adjustment based on context
     const baseWeights = {
-      comfortZone: 0.25,
-      mood: 0.30,
+      comfortZone: 0.20,
+      mood: 0.25,
       time: 0.15,
-      duration: 0.20,
+      duration: 0.15,
       goal: 0.05,
-      exploration: 0.05
+      exploration: 0.05,
+      popularity: 0.15
     };
 
     // Adjust weights based on context
@@ -518,6 +524,26 @@ class MoodExplorer {
     if (hour >= 12 && hour < 18) return 'afternoon';
     if (hour >= 18 && hour < 22) return 'evening';
     return 'night';
+  }
+
+  /**
+   * Score song based on popularity (play count)
+   * @param {Object} song - Song object
+   * @returns {number} Popularity score (0-1)
+   */
+  getPopularityScore(song) {
+    // Use pre-calculated popularity score if available
+    if (song.popularity_score !== undefined) {
+      return song.popularity_score;
+    }
+    
+    // Fallback: calculate from play count
+    const playCount = parseInt(song.PLAY_COUNT) || 0;
+    if (playCount === 0) return 0.1; // Small boost for songs with no data
+    
+    // Logarithmic scale: log(playCount + 1) / log(maxExpectedPlays)
+    // Normalize to 0-1 scale where 1M plays = 1.0
+    return Math.min(1.0, Math.log(playCount + 1) / Math.log(1000000));
   }
 }
 
