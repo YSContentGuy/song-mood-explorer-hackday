@@ -6,6 +6,7 @@ const YousicianClient = require('./src/yousician-client');
 const MoodExplorer = require('./src/mood-explorer');
 const DatasetLoader = require('./src/dataset-loader');
 const { Validator, ValidationError, errorHandler, requestLogger } = require('./src/validation');
+const { exec } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -815,6 +816,38 @@ app.get('/health', (req, res) => {
 
 // Error handling middleware (must be last)
 app.use(errorHandler);
+
+// Restricted admin commands (whitelisted only)
+const ADMIN_PRESETS = [
+  { key: 'ps', label: 'Show Node processes', cmd: "ps -ef | grep -E '(node|nodemon)\\s+index\\.js' | grep -v grep" },
+  { key: 'logs', label: 'Tail server.log', cmd: 'tail -n 120 /workspace/server.log || echo "No server.log"' },
+  { key: 'health', label: 'Check /health', cmd: 'curl -sS http://127.0.0.1:3000/health || echo "unreachable"' },
+  { key: 'stop', label: 'Stop dev server', cmd: "pkill -f 'node index.js' || true; pkill -f nodemon || true" },
+  { key: 'start', label: 'Start dev server', cmd: 'nohup node /workspace/index.js > /workspace/server.log 2>&1 & echo started' }
+];
+
+app.get('/api/admin/presets', (req, res) => {
+  res.json({ presets: ADMIN_PRESETS.map(({ key, label }) => ({ key, label })) });
+});
+
+app.post('/api/admin/exec', async (req, res) => {
+  try {
+    const { preset } = req.body || {};
+    const found = ADMIN_PRESETS.find(p => p.key === preset);
+    if (!found) return res.status(400).json({ error: 'Unknown preset' });
+    exec(found.cmd, { timeout: 20000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      res.json({
+        preset,
+        cmd: found.cmd,
+        exitCode: err && typeof err.code === 'number' ? err.code : 0,
+        stdout,
+        stderr: stderr || (err && err.message) || ''
+      });
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Start server
 app.listen(PORT, () => {
