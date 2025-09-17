@@ -5,6 +5,7 @@ require('dotenv').config();
 const YousicianClient = require('./src/yousician-client');
 const MoodExplorer = require('./src/mood-explorer');
 const DatasetLoader = require('./src/dataset-loader');
+const LLMMoodEnhancer = require('./src/llm-mood-enhancer');
 const { Validator, ValidationError, errorHandler, requestLogger } = require('./src/validation');
 
 const app = express();
@@ -640,6 +641,18 @@ app.get('/api/demo/user-suggestion', async (req, res) => {
     const idx = Math.max(0, Math.min(recs.length - 1, parseInt(offset) || 0));
     const top = recs[idx] || null;
 
+    // Generate AI explanation for the recommendation
+    let aiExplanation = null;
+    if (top) {
+      try {
+        const llmEnhancer = new LLMMoodEnhancer();
+        aiExplanation = await llmEnhancer.generateRecommendationExplanation(top, user, context);
+      } catch (error) {
+        console.warn('Failed to generate AI explanation:', error.message);
+        // Fallback explanation will be handled by the LLM enhancer
+      }
+    }
+
     res.json({
       user: {
         id: user.id,
@@ -652,6 +665,7 @@ app.get('/api/demo/user-suggestion', async (req, res) => {
       },
       context,
       suggestion: top,
+      aiExplanation: aiExplanation,
       offset: idx,
       total: recs.length
     });

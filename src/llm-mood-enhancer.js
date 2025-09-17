@@ -140,6 +140,106 @@ ${song.TAGS ? `Tags: ${song.TAGS}` : ''}`;
   }
 
   /**
+   * Generate personalized recommendation explanation using LLM
+   * @param {Object} song - Recommended song
+   * @param {Object} userProfile - User's profile and preferences
+   * @param {Object} context - Current context (mood, time, goals)
+   * @returns {Promise<Object>} AI-generated explanation
+   */
+  async generateRecommendationExplanation(song, userProfile, context) {
+    try {
+      if (!this.openaiApiKey) {
+        return this.getFallbackExplanation(song, userProfile, context);
+      }
+
+      const system = `You are a personalized music recommendation assistant. Create engaging, personalized explanations for why a song is perfect for a specific user. Be conversational, encouraging, and specific about the match.`;
+      
+      const user = `Explain why "${song.SONG_TITLE}" by ${song.ARTIST_NAME} is perfect for this user:
+
+USER PROFILE:
+- Name: ${userProfile.name}
+- Skill Level: ${userProfile.skillLevel}/10
+- Genre Preferences: ${userProfile.genrePreferences.join(', ')}
+- Experience: ${userProfile.playingExperience}
+- Goals: ${userProfile.learningGoals.join(', ')}
+
+CURRENT CONTEXT:
+- Mood: ${context.mood}
+- Time of Day: ${context.timeOfDay}
+- Available Time: ${context.availableTime} minutes
+- Goals: ${context.goals}
+
+SONG DETAILS:
+- Genre: ${song.genre_tags?.join(', ') || 'Various'}
+- Difficulty: ${song.difficulty_level}/10
+- Energy Level: ${song.energy_level}
+- Style Tags: ${song.style_tags?.join(', ') || 'N/A'}
+
+Return a JSON object with:
+{
+  "explanation": "2-3 sentence personalized explanation of why this song is perfect",
+  "confidence": 0.0-1.0,
+  "reasoning": "brief technical reasoning"
+}`;
+
+      const body = {
+        model: this.model,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user }
+        ],
+        temperature: 0.7
+      };
+
+      const resp = await axios.post('https://api.openai.com/v1/chat/completions', body, {
+        headers: {
+          'Authorization': `Bearer ${this.openaiApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      });
+
+      const content = resp?.data?.choices?.[0]?.message?.content || '';
+      const parsed = this.parseLLMJson(content);
+      
+      return {
+        explanation: parsed?.explanation || this.getFallbackExplanation(song, userProfile, context).explanation,
+        confidence: parsed?.confidence || 0.8,
+        reasoning: parsed?.reasoning || 'AI-generated personalized explanation',
+        source: 'openai'
+      };
+    } catch (error) {
+      console.warn(`Error generating explanation for ${song.SONG_TITLE}:`, error.message);
+      return this.getFallbackExplanation(song, userProfile, context);
+    }
+  }
+
+  /**
+   * Fallback explanation when LLM is unavailable
+   */
+  getFallbackExplanation(song, userProfile, context) {
+    const skillMatch = Math.abs(song.difficulty_level - userProfile.skillLevel) <= 2;
+    const genreMatch = song.genre_tags?.some(genre => userProfile.genrePreferences.includes(genre));
+    
+    let explanation = `"${song.SONG_TITLE}" is a great choice for your ${context.mood} ${context.timeOfDay} practice session.`;
+    
+    if (skillMatch) {
+      explanation += ` The ${song.difficulty_level}/10 difficulty level matches your ${userProfile.skillLevel}/10 skill perfectly.`;
+    }
+    
+    if (genreMatch) {
+      explanation += ` It's ${song.genre_tags?.join(' and ')} music, which aligns with your preferences.`;
+    }
+    
+    return {
+      explanation,
+      confidence: 0.7,
+      reasoning: 'Fallback explanation based on skill and genre matching',
+      source: 'fallback'
+    };
+  }
+
+  /**
    * Simulate LLM call with realistic mood inference
    * In production, this would call ChatGPT/Claude API
    */

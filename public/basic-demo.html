@@ -22,6 +22,7 @@
     .song { margin-top:8px; border-left:4px solid #667eea; padding-left:10px; }
     .actions { margin-top: 8px; }
     .btn { background:#e9ecff; color:#2d3a8c; border:none; padding:6px 10px; border-radius:8px; cursor:pointer; }
+    .ai-explanation { background:#f0f8ff; border-left:3px solid #007AFF; padding:8px 12px; margin-top:8px; border-radius:4px; font-size:14px; color:#333; }
     @media (max-width: 800px) { .buttons { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -95,9 +96,10 @@
       panel.style.display = 'block';
       panel.innerHTML = '<div class="muted">Working…</div>';
       const item = (overview.users || []).find(x => x.id === userId);
-      let suggestion = item?.suggestion || null;
-      // If not present, fetch it using derived mood from behavioral analysis
-      if (!suggestion || (typeof offset === 'number' && offset > 0)) {
+      let suggestion = null;
+      let aiExplanation = null;
+      // Always fetch fresh suggestions to get AI explanations
+      if (item) {
         const mood = item?.derivedMood || 'neutral'; // Use behavioral analysis derived mood
         const timeOfDay = item?.context?.timeOfDay || 'evening';
         const goals = item?.context?.goals || (mood === 'energetic' ? 'challenge' : 'relax');
@@ -105,6 +107,8 @@
         const res = await fetch('/api/demo/user-suggestion?' + q.toString());
         const data = await res.json();
         suggestion = data.suggestion || null;
+        aiExplanation = data.aiExplanation || null;
+        console.log('AI Explanation received:', aiExplanation);
       }
       if (!item) { panel.innerHTML = '<div class="muted">User not found</div>'; return; }
       if (!suggestion) {
@@ -139,6 +143,7 @@
         <div class='song row'><div><strong>${s.title || s.SONG_TITLE}</strong> — ${s.artist || s.ARTIST_NAME || 'Unknown'}</div>
           <div class='muted'>Score: ${s.contextualScore ?? 'N/A'} · Energy: ${s.energy_level || 'n/a'} · Diff: ${s.difficulty_level ?? 'n/a'} · Comfort: ${(s.scoringBreakdown && typeof s.scoringBreakdown.comfortZone === 'number') ? Math.round(s.scoringBreakdown.comfortZone*100)+'%' : 'n/a'}</div>
           <div class='muted'>${whyLine(item, s)}</div>
+          ${aiExplanation ? `<div class='ai-explanation'><strong>🤖 AI Insight:</strong> ${aiExplanation.explanation}</div>` : '<div class="muted">No AI explanation available</div>'}
         </div>
         <div class='actions'><button class='btn' id='rerollBtn'>Reroll</button></div>
       `;
