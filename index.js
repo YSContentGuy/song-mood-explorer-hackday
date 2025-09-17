@@ -747,6 +747,67 @@ app.post('/api/demo/full-recommendation', async (req, res) => {
   }
 });
 
+// Profile summary: fingerprint + evidence for a user
+app.get('/api/demo/user-profile-summary', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const client = new YousicianClient();
+    await client.ensureDatasetLoaded();
+
+    const users = datasetLoader.getMockUserProfiles();
+    const user = users.find(u => u.id === userId) || users[0];
+
+    // Genre summary
+    const summary = datasetLoader.summarizeForGenres(user.genrePreferences);
+
+    // Energy comfort inferred from genres and tags in dataset
+    const energyMap = { very_low: 1, low: 2, medium: 3, high: 4, very_high: 5 };
+    const energyComfort = summary.dominantEnergy ? (energyMap[summary.dominantEnergy] || 3) / 5 : 0.6;
+
+    // Difficulty window around user skill
+    const skill = user.skillLevel || 3;
+    const comfortMin = Math.max(1, skill - 1);
+    const comfortMax = Math.min(10, skill + 1);
+
+    // Mood fingerprint from top style tags
+    const toPct = (has) => has ? 0.8 : 0.3;
+    const tops = (summary.topStyleTags || []).join(',').toLowerCase();
+    const fingerprint = {
+      energetic: tops.includes('energetic') || tops.includes('powerful') ? 0.8 : 0.4,
+      peaceful: tops.includes('peaceful') || tops.includes('calm') || tops.includes('dream') ? 0.8 : 0.3,
+      happy: tops.includes('happy') || tops.includes('upbeat') || tops.includes('positive') ? 0.75 : 0.35,
+      melancholic: tops.includes('melanch') || tops.includes('sad') || tops.includes('emotional') ? 0.7 : 0.3,
+      focused: tops.includes('focused') || tops.includes('study') || tops.includes('minimal') ? 0.6 : 0.3
+    };
+
+    // Time-of-day rhythm (simulate with energy preference heuristic)
+    const rhythm = {
+      morning: summary.dominantEnergy === 'high' || summary.dominantEnergy === 'very_high' ? 0.7 : 0.5,
+      afternoon: 0.6,
+      evening: summary.dominantEnergy === 'low' || summary.dominantEnergy === 'very_low' ? 0.7 : 0.5,
+      night: 0.4
+    };
+
+    // Evidence chips
+    const chips = [];
+    chips.push(`${summary.count} matches in your genres`);
+    if (summary.dominantEnergy) chips.push(`${summary.dominantEnergy} energy comfort`);
+    chips.push(`Skill ${skill}, comfort ${comfortMin}-${comfortMax}`);
+
+    res.json({
+      user: { id: user.id, name: user.name, skillLevel: skill, genres: user.genrePreferences },
+      fingerprint,
+      energyComfort,
+      difficultyWindow: { min: comfortMin, max: comfortMax },
+      rhythm,
+      chips,
+      summary
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

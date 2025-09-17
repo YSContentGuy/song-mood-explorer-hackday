@@ -28,6 +28,12 @@
     .controls input, .controls select { width:100%; padding:6px 8px; border:1px solid #e1e5ee; border-radius:8px; }
     .controls .full { grid-column: 1 / -1; }
     .list { margin-top:12px; }
+    .chips { display:flex; flex-wrap: wrap; gap:6px; margin-top:8px; }
+    .chip { background:#f0f3ff; color:#2d3a8c; border:1px solid #e1e6ff; padding:4px 8px; border-radius:999px; font-size:12px; }
+    .radar { width: 100%; max-width: 260px; }
+    .why { background:#fafbff; border:1px solid #eef0fb; border-radius:8px; padding:8px; margin-top:8px; }
+    .bar { height: 6px; background:#e8ebf7; border-radius:6px; overflow:hidden; }
+    .bar > span { display:block; height:100%; background:#667eea; }
   </style>
 </head>
 <body>
@@ -89,12 +95,29 @@
       </div>
     </div>
 
+    <div id="profile" class="panel" style="display:none"></div>
     <div id="panel" class="panel" style="display:none"></div>
     <div id="list" class="panel list" style="display:none"></div>
   </div>
   <script>
     let overview = null;
     let currentUserId = null;
+
+    function saveControls(){
+      const keys = ['mood','timeOfDay','minutes','goals','explore','k','lambda'];
+      const obj = {};
+      keys.forEach(id => obj[id] = document.getElementById(id).value);
+      localStorage.setItem('moodControls', JSON.stringify(obj));
+    }
+    function loadControls(){
+      try {
+        const raw = localStorage.getItem('moodControls');
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        Object.entries(obj).forEach(([k,v]) => { const el = document.getElementById(k); if (el && v!=null) el.value = v; });
+      } catch(_) {}
+    }
+
     async function load() {
       const buttons = document.getElementById('buttons');
       buttons.textContent = 'Loading…';
@@ -102,10 +125,12 @@
         const res = await fetch('/api/demo/users-overview', { cache: 'no-store' });
         overview = await res.json();
         renderButtons();
+        loadControls();
         if (overview.users && overview.users.length > 0) {
           currentUserId = overview.users[0].id;
-          showUser(currentUserId);
-          refreshTopN();
+          await showUser(currentUserId);
+          await refreshProfile(currentUserId);
+          await refreshTopN();
         }
       } catch (e) {
         overview = { users: [] };
@@ -120,19 +145,17 @@
         b.className = 'userbtn';
         const blurbMini = (u.blurb||'').split(' · ').slice(0,2).join(' · ');
         b.innerHTML = `${u.name}<span class='mini'>${blurbMini}</span>`;
-        b.onclick = () => { currentUserId = u.id; showUser(u.id); refreshTopN(); };
+        b.onclick = async () => { currentUserId = u.id; await showUser(u.id); await refreshProfile(u.id); await refreshTopN(); };
         buttons.appendChild(b);
       });
     }
+
     function whyLine(item, suggestion){
       const s = suggestion || {};
       const b = s.scoringBreakdown || {};
       const parts = [];
       if (item?.context) parts.push(item.context.timeOfDay + ', ' + item.context.goals);
-      if (typeof s.duration === 'number') {
-        const mins = Math.round(s.duration/60);
-        parts.push(mins+ ' min');
-      }
+      if (typeof s.duration === 'number') { const mins = Math.round(s.duration/60); parts.push(mins+ ' min'); }
       if (s.energy_level) parts.push(s.energy_level + ' energy');
       if (typeof s.difficulty_level === 'number' && item?.user?.skillLevel) {
         const diff = s.difficulty_level - item.user.skillLevel;
@@ -141,6 +164,79 @@
       }
       if (typeof b.moodAlignment === 'number') parts.push('mood ' + Math.round(b.moodAlignment*100) + '%');
       return parts.join(' · ');
+    }
+
+    function renderContributionBars(breakdown){
+      const entries = [
+        ['Comfort', breakdown.comfortZone],
+        ['Mood', breakdown.moodAlignment],
+        ['Time', breakdown.timeAlignment],
+        ['Duration', breakdown.durationFit],
+        ['Goal', breakdown.goalAlignment],
+        ['Explore', breakdown.exploration]
+      ];
+      return entries.map(([label,val]) => {
+        const pct = Math.max(0, Math.min(100, Math.round((Number(val||0)) * 100)));
+        return `<div class='row'><div class='muted'>${label} <span style='float:right'>${pct}%</span></div><div class='bar'><span style='width:${pct}%'></span></div></div>`;
+      }).join('');
+    }
+
+    function radarSvg(fp){
+      // Simple 5-axis radar: energetic, peaceful, happy, melancholic, focused
+      const axes = [
+        ['Energetic', fp.energetic||0.3],
+        ['Peaceful', fp.peaceful||0.3],
+        ['Happy', fp.happy||0.3],
+        ['Melancholic', fp.melancholic||0.3],
+        ['Focused', fp.focused||0.3]
+      ];
+      const size = 240; const cx = size/2; const cy = size/2; const r = 90;
+      const pts = axes.map(([,v],i)=>{
+        const angle = (Math.PI*2*i/axes.length) - Math.PI/2;
+        const rr = r * Math.max(0, Math.min(1,v));
+        return [cx + rr*Math.cos(angle), cy + rr*Math.sin(angle)];
+      });
+      const poly = pts.map(p=>p.join(',')).join(' ');
+      const grid = [0.25,0.5,0.75,1].map(s=>`<circle cx='${cx}' cy='${cy}' r='${r*s}' fill='none' stroke='#eef1fb'/>`).join('');
+      const spokes = axes.map((_,i)=>{
+        const angle = (Math.PI*2*i/axes.length) - Math.PI/2;
+        return `<line x1='${cx}' y1='${cy}' x2='${cx + r*Math.cos(angle)}' y2='${cy + r*Math.sin(angle)}' stroke='#eef1fb'/>`;
+      }).join('');
+      const labels = axes.map(([name],i)=>{
+        const angle = (Math.PI*2*i/axes.length) - Math.PI/2;
+        const lx = cx + (r+16)*Math.cos(angle);
+        const ly = cy + (r+16)*Math.sin(angle);
+        return `<text x='${lx}' y='${ly}' text-anchor='middle' dominant-baseline='middle' font-size='10' fill='#667'>${name}</text>`;
+      }).join('');
+      return `
+        <svg class='radar' viewBox='0 0 ${size} ${size}'>
+          ${grid}
+          ${spokes}
+          <polygon points='${poly}' fill='rgba(102,126,234,0.25)' stroke='#667eea' stroke-width='2'/>
+          ${labels}
+        </svg>
+      `;
+    }
+
+    async function refreshProfile(userId){
+      const profEl = document.getElementById('profile');
+      profEl.style.display = 'block';
+      profEl.innerHTML = '<div class="muted">Building profile…</div>';
+      const res = await fetch('/api/demo/user-profile-summary?userId=' + encodeURIComponent(userId));
+      const data = await res.json();
+      const chips = (data.chips||[]).map(c=>`<span class='chip'>${c}</span>`).join('');
+      profEl.innerHTML = `
+        <div class='title'>Your Profile Fingerprint</div>
+        <div class='grid2 row'>
+          <div>${radarSvg(data.fingerprint)}</div>
+          <div>
+            <div class='muted'>Energy comfort: ${Math.round((data.energyComfort||0.6)*100)}%</div>
+            <div class='muted'>Difficulty window: ${data.difficultyWindow?.min ?? '?'}–${data.difficultyWindow?.max ?? '?'}</div>
+            <div class='chips'>${chips}</div>
+            <div class='row muted'>Practice rhythm (heuristic): morning ${Math.round((data.rhythm?.morning||0)*100)}% · evening ${Math.round((data.rhythm?.evening||0)*100)}%</div>
+          </div>
+        </div>
+      `;
     }
 
     async function showUser(userId){
@@ -181,6 +277,7 @@
 
     async function refreshTopN(){
       if (!currentUserId) return;
+      saveControls();
       const list = document.getElementById('list');
       list.style.display = 'block';
       list.innerHTML = '<div class="muted">Fetching suggestions…</div>';
@@ -201,12 +298,20 @@
             <div><strong>${s.title || s.SONG_TITLE}</strong> — ${s.artist || s.ARTIST_NAME || 'Unknown'}</div>
             <div class='muted'>Score: ${s.contextualScore ?? 'N/A'} · Energy: ${s.energy_level || 'n/a'} · Diff: ${s.difficulty_level ?? 'n/a'}</div>
             <div class='muted'>${whyLine(item, s)}</div>
+            <div class='why'>
+              <div class='muted'>Why this fits you</div>
+              ${renderContributionBars(s.scoringBreakdown || {})}
+            </div>
           </div>
         `).join('');
     }
 
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('applyBtn').onclick = refreshTopN;
+      ['mood','timeOfDay','minutes','goals','explore','k','lambda'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', saveControls);
+      });
     });
 
     load();
