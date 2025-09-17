@@ -157,9 +157,20 @@ class MoodExplorer {
       else score += 0.0;
     }
 
-    // Genre preference match
-    if (userProfile && Array.isArray(userProfile.genrePreferences) && Array.isArray(song.genre_tags)) {
-      const matches = song.genre_tags.filter(g => userProfile.genrePreferences.includes(g)).length;
+    // Genre preference match - check both genre_tags and style_tags
+    if (userProfile && Array.isArray(userProfile.genrePreferences)) {
+      let matches = 0;
+      
+      // Check genre_tags first
+      if (Array.isArray(song.genre_tags)) {
+        matches += song.genre_tags.filter(g => userProfile.genrePreferences.includes(g)).length;
+      }
+      
+      // Check style_tags for genre matches (since genre_tags is often empty)
+      if (Array.isArray(song.style_tags)) {
+        matches += song.style_tags.filter(tag => userProfile.genrePreferences.includes(tag)).length;
+      }
+      
       if (matches >= 2) score += 0.3;
       else if (matches === 1) score += 0.2;
     }

@@ -104,6 +104,7 @@ class YousicianClient {
           min_difficulty: Math.max(1, userProfile.skillLevel - 1),
           max_difficulty: userProfile.skillLevel + 1,
           instrument_fit: userProfile.instrument,
+          genre_tags: userProfile.genrePreferences || [],
           limit: 10
         };
         let results = this.datasetLoader.getSongs(filters);
@@ -113,8 +114,9 @@ class YousicianClient {
           results = this.datasetLoader.getSongs(relaxed);
         }
         if (results.length === 0) {
-          const noInstr = { min_difficulty: 1, max_difficulty: 10, limit: filters.limit };
-          results = this.datasetLoader.getSongs(noInstr);
+          // Remove genre filter as last resort
+          const noGenre = { min_difficulty: 1, max_difficulty: 10, instrument_fit: userProfile.instrument, limit: filters.limit };
+          results = this.datasetLoader.getSongs(noGenre);
         }
         return results;
       }
