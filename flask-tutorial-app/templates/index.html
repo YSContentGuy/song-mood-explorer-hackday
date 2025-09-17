@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Flask Tutorial App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <div class="container">
+      <h1>Flask Tutorial App</h1>
+
+      <form class="add-form" method="post" action="{{ url_for('add_item') }}">
+        <input type="text" name="text" placeholder="Add an item" required>
+        <button type="submit">Add</button>
+      </form>
+
+      <ul class="items">
+        {% for item in items %}
+          <li>{{ item }}</li>
+        {% else %}
+          <li class="empty">No items yet. Add one above!</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </body>
+</html>
