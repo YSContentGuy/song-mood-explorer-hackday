@@ -86,20 +86,34 @@ app.get('/api/demo/users-overview', async (req, res) => {
 
     const users = datasetLoader.getMockUserProfiles();
 
-    // Pick mood from summary heuristics
-    const pickMood = (summary) => {
-      switch (summary.dominantEnergy) {
-        case 'very_high':
-        case 'high': return 'energetic';
-        case 'very_low':
-        case 'low': return 'relaxed';
-        default: {
-          const tags = summary.topStyleTags.join(',').toLowerCase();
-          if (tags.includes('peace') || tags.includes('calm') || tags.includes('dream')) return 'calm';
-          if (tags.includes('happy') || tags.includes('upbeat') || tags.includes('positive')) return 'happy';
-          if (tags.includes('melanch')) return 'sad';
-          return 'neutral';
-        }
+    // Pick mood based on user profile characteristics for diversity
+    const pickMood = (summary, userProfile) => {
+      // Create diverse moods based on user characteristics
+      switch (userProfile.id) {
+        case 'user_beginner':
+          // Beginner users tend to prefer relaxed, comfortable moods
+          return 'relaxed';
+        case 'user_intermediate':
+          // Intermediate users are often energetic and motivated
+          return 'energetic';
+        case 'user_advanced':
+          // Advanced users often seek focused, challenging experiences
+          return 'focused';
+        default:
+          // Fallback to energy-based selection
+          switch (summary.dominantEnergy) {
+            case 'very_high':
+            case 'high': return 'energetic';
+            case 'very_low':
+            case 'low': return 'relaxed';
+            default: {
+              const tags = summary.topStyleTags.join(',').toLowerCase();
+              if (tags.includes('peace') || tags.includes('calm') || tags.includes('dream')) return 'calm';
+              if (tags.includes('happy') || tags.includes('upbeat') || tags.includes('positive')) return 'happy';
+              if (tags.includes('melanch')) return 'sad';
+              return 'neutral';
+            }
+          }
       }
     };
 
@@ -108,8 +122,9 @@ app.get('/api/demo/users-overview', async (req, res) => {
     const results = [];
     for (const u of users) {
       const summary = client.datasetLoader.summarizeForGenres(u.genrePreferences);
-      const mood = pickMood(summary);
-      const goals = summary.dominantEnergy && (summary.dominantEnergy === 'high' || summary.dominantEnergy === 'very_high') ? 'challenge' : 'relax';
+      const mood = pickMood(summary, u);
+      // Set goals based on mood for more diverse behavior
+      const goals = mood === 'energetic' || mood === 'focused' ? 'challenge' : 'relax';
       const context = { mood, timeOfDay, availableTime: 20, goals, exploreNewMoods: true };
       const recs = await moodExplorer.getContextualRecommendations(u, context);
       const top = recs[0] || null;
