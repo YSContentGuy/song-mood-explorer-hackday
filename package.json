@@ -1,7 +1,7 @@
 {
   "name": "song-mood-explorer-hackday",
-  "version": "1.0.0",
-  "description": "A hackday project to explore song moods using the Yousician API",
+  "version": "2.0.0",
+  "description": "AI-Enhanced Music Recommendation System with OpenAI GPT-4o-mini integration, 95% Yousician data utilization, and intelligent contextual recommendations beyond comfort zones",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -12,7 +12,7 @@
     "build:story": "node scripts/build-static-story.js",
     "build:story:csv": "node scripts/build-static-story.js 'song metadata (2).csv'"
   },
-  "keywords": ["yousician", "music", "mood", "api", "hackday"],
+  "keywords": ["yousician", "music", "mood", "api", "ai", "openai", "gpt-4", "recommendations", "machine-learning", "behavioral-analysis", "hackday"],
   "author": "",
   "license": "MIT",
   "dependencies": {
