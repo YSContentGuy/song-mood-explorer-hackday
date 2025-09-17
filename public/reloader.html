@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Demo Reloader</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#f5f7fb; margin:0; padding:16px; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    .controls { background:#fff; border:1px solid #eee; border-radius:12px; padding:12px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .controls .status { font-size:12px; color:#555; }
+    .btn { background:#e9ecff; color:#2d3a8c; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; }
+    .btn:hover { background:#dfe5ff; }
+    input, select { padding:6px 8px; border:1px solid #e1e5ee; border-radius:8px; }
+    iframe { width:100%; height: calc(100vh - 120px); border:1px solid #e6e9f3; border-radius:12px; background:#fff; margin-top:12px; }
+    .ok { color:#0a7f3f; }
+    .bad { color:#b42318; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="controls">
+      <button class="btn" id="hardRefresh">Hard refresh</button>
+      <label>Auto (s)
+        <input id="interval" type="number" min="1" value="2" style="width:64px" />
+      </label>
+      <label>Enabled
+        <select id="auto">
+          <option>true</option>
+          <option>false</option>
+        </select>
+      </label>
+      <span class="status" id="health">Health: unknown</span>
+      <span class="status" id="last">Last reload: never</span>
+    </div>
+    <iframe id="frame" src="/basic-demo.html"></iframe>
+  </div>
+  <script>
+    const frame = document.getElementById('frame');
+    const hardBtn = document.getElementById('hardRefresh');
+    const intervalEl = document.getElementById('interval');
+    const autoEl = document.getElementById('auto');
+    const healthEl = document.getElementById('health');
+    const lastEl = document.getElementById('last');
+
+    function setFrame(ts=true){
+      const url = new URL(frame.src, window.location.origin);
+      if (ts) url.searchParams.set('ts', Date.now());
+      frame.src = url.pathname + '?' + url.searchParams.toString();
+      lastEl.textContent = 'Last reload: ' + new Date().toLocaleTimeString();
+    }
+
+    async function ping(){
+      try {
+        const res = await fetch('/health', { cache: 'no-store' });
+        if (!res.ok) throw new Error('bad');
+        healthEl.textContent = 'Health: OK';
+        healthEl.className = 'status ok';
+        return true;
+      } catch (e) {
+        healthEl.textContent = 'Health: offline';
+        healthEl.className = 'status bad';
+        return false;
+      }
+    }
+
+    let timer = null;
+    function start(){
+      stop();
+      const every = Math.max(1, parseInt(intervalEl.value) || 2) * 1000;
+      timer = setInterval(async () => {
+        const up = await ping();
+        if (autoEl.value === 'true' && up) setFrame(true);
+      }, every);
+    }
+    function stop(){ if (timer) { clearInterval(timer); timer = null; } }
+
+    hardBtn.onclick = () => setFrame(true);
+    intervalEl.onchange = () => { start(); };
+    autoEl.onchange = () => { if (autoEl.value === 'true') start(); else stop(); };
+
+    (async () => { await ping(); setFrame(true); start(); })();
+  </script>
+</body>
+</html>
