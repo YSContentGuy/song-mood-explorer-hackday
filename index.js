@@ -636,8 +636,7 @@ app.get('/api/demo/user-suggestion', async (req, res) => {
       exploreNewMoods: true
     };
 
-    const explorer = new MoodExplorer();
-    const recs = await explorer.getContextualRecommendations(user, context);
+    const recs = await moodExplorer.getContextualRecommendations(user, context);
     const idx = Math.max(0, Math.min(recs.length - 1, parseInt(offset) || 0));
     const top = recs[idx] || null;
 
@@ -691,7 +690,6 @@ app.get('/api/demo/contextual-flow', async (req, res) => {
     const demoUser = users[0];
     const demoContext = contexts[0];
     
-    const moodExplorer = new MoodExplorer();
     const recommendations = await moodExplorer.getContextualRecommendations(demoUser, demoContext);
     
     res.json({

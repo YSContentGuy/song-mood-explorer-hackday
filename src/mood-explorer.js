@@ -85,6 +85,7 @@ class MoodExplorer {
     return filters;
   }
 
+
   /**
    * Score songs based on mood and context fit
    * @param {Array} songs - Array of songs to score
