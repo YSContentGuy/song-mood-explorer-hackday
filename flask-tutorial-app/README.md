@@ -3,7 +3,6 @@
 This is a tiny Flask app that lets you:
 - Add simple items to an in-memory list
 - Ask an LLM via a backend endpoint (`/api/llm`) using an OpenAI-compatible API
-- Use a built-in DEMO MODE if you don't have an API key yet
 
 ## Setup
 
@@ -25,8 +24,7 @@ sudo apt-get update && sudo apt-get install -y python3-venv
 
 Copy `.env.example` to `.env` and edit:
 ```
-# If OPENAI_API_KEY is unset/empty, the app falls back to DEMO MODE
-OPENAI_API_KEY=
+OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
 # Optional if you use a compatible server
 # OPENAI_BASE_URL=https://api.openai.com/v1
@@ -43,8 +41,6 @@ python app.py
 ```
 
 Visit http://localhost:5000 and try the LLM card.
-- With no `OPENAI_API_KEY`, you will see a deterministic local demo response labelled `[Demo mode]`.
-- Once you add a real key, the same UI will call the provider and return real completions.
 
 ## Notes
 - The LLM call uses a minimal stdlib HTTP client to avoid extra dependencies.
