@@ -23,17 +23,78 @@
     .actions { margin-top: 8px; }
     .btn { background:#e9ecff; color:#2d3a8c; border:none; padding:6px 10px; border-radius:8px; cursor:pointer; }
     @media (max-width: 800px) { .buttons { grid-template-columns: 1fr; } }
+    .controls { margin-top:16px; background:#fff; border:1px solid #eee; border-radius:12px; padding:12px; display:grid; grid-template-columns: repeat(6, 1fr); gap:8px; }
+    .controls label { display:block; font-size:12px; color:#666; margin-bottom:4px; }
+    .controls input, .controls select { width:100%; padding:6px 8px; border:1px solid #e1e5ee; border-radius:8px; }
+    .controls .full { grid-column: 1 / -1; }
+    .list { margin-top:12px; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>Three Users</h1>
-    <div class="sub">Three buttons. Click one. You’ll see their blurb, mood, and a song.</div>
+    <div class="sub">Pick a user, adjust mood/time/goal, and see top-N diverse suggestions with reasons.</div>
     <div id="buttons" class="buttons">Loading…</div>
+
+    <div class="controls">
+      <div>
+        <label for="mood">Mood</label>
+        <select id="mood">
+          <option>neutral</option>
+          <option>relaxed</option>
+          <option>calm</option>
+          <option>happy</option>
+          <option>energetic</option>
+          <option>tired</option>
+          <option>stressed</option>
+        </select>
+      </div>
+      <div>
+        <label for="timeOfDay">Time</label>
+        <select id="timeOfDay">
+          <option>evening</option>
+          <option>morning</option>
+          <option>afternoon</option>
+          <option>night</option>
+        </select>
+      </div>
+      <div>
+        <label for="minutes">Minutes</label>
+        <input id="minutes" type="number" value="20" min="5" max="120" />
+      </div>
+      <div>
+        <label for="goals">Goal</label>
+        <select id="goals">
+          <option>relax</option>
+          <option>challenge</option>
+          <option>energize</option>
+          <option>maintain</option>
+          <option>learn</option>
+        </select>
+      </div>
+      <div>
+        <label for="explore">Explore</label>
+        <select id="explore"><option>false</option><option>true</option></select>
+      </div>
+      <div>
+        <label for="k">Top N</label>
+        <input id="k" type="number" value="3" min="1" max="10" />
+      </div>
+      <div>
+        <label for="lambda">Diversity (0..1)</label>
+        <input id="lambda" type="number" step="0.05" value="0.7" min="0" max="1" />
+      </div>
+      <div class="full">
+        <button class="btn" id="applyBtn">Apply</button>
+      </div>
+    </div>
+
     <div id="panel" class="panel" style="display:none"></div>
+    <div id="list" class="panel list" style="display:none"></div>
   </div>
   <script>
     let overview = null;
+    let currentUserId = null;
     async function load() {
       const buttons = document.getElementById('buttons');
       buttons.textContent = 'Loading…';
@@ -41,17 +102,13 @@
         const res = await fetch('/api/demo/users-overview', { cache: 'no-store' });
         overview = await res.json();
         renderButtons();
-        // Auto-open the first user to show content immediately
         if (overview.users && overview.users.length > 0) {
-          showUser(overview.users[0].id);
+          currentUserId = overview.users[0].id;
+          showUser(currentUserId);
+          refreshTopN();
         }
       } catch (e) {
-        // Offline fallback so the demo always shows something
-        overview = { users: [
-          { id: 'user_beginner', name: 'Sarah (Beginner)', blurb: 'Beginner · Likes pop, acoustic, folk', derivedMood: 'relaxed', context: { timeOfDay: 'evening', goals: 'relax' }, user: { skillLevel: 2 }, suggestion: { SONG_TITLE: 'Cleaning Windows', ARTIST_NAME: 'Van Morrison', energy_level: 'medium', difficulty_level: 4, contextualScore: 0.54, scoringBreakdown: { moodAlignment: 0.5 } } },
-          { id: 'user_intermediate', name: 'Mike (Intermediate)', blurb: 'Intermediate · Likes rock, alternative, indie', derivedMood: 'relaxed', context: { timeOfDay: 'evening', goals: 'relax' }, user: { skillLevel: 5 }, suggestion: { SONG_TITLE: 'Butterflies', ARTIST_NAME: 'Zendaya', energy_level: 'low', difficulty_level: 4, contextualScore: 0.72, scoringBreakdown: { moodAlignment: 0.75 } } },
-          { id: 'user_advanced', name: 'Alex (Advanced)', blurb: 'Advanced · Likes metal, progressive, jazz', derivedMood: 'energetic', context: { timeOfDay: 'afternoon', goals: 'challenge' }, user: { skillLevel: 8 }, suggestion: { SONG_TITLE: 'Here Comes The Sun', ARTIST_NAME: 'The Beatles', energy_level: 'high', difficulty_level: 7, contextualScore: 0.58, scoringBreakdown: { moodAlignment: 0.65 } } }
-        ] };
+        overview = { users: [] };
         renderButtons();
       }
     }
@@ -63,7 +120,7 @@
         b.className = 'userbtn';
         const blurbMini = (u.blurb||'').split(' · ').slice(0,2).join(' · ');
         b.innerHTML = `${u.name}<span class='mini'>${blurbMini}</span>`;
-        b.onclick = () => showUser(u.id);
+        b.onclick = () => { currentUserId = u.id; showUser(u.id); refreshTopN(); };
         buttons.appendChild(b);
       });
     }
@@ -72,9 +129,9 @@
       const b = s.scoringBreakdown || {};
       const parts = [];
       if (item?.context) parts.push(item.context.timeOfDay + ', ' + item.context.goals);
-      if (typeof s.duration === 'number' && item?.context?.availableTime) {
+      if (typeof s.duration === 'number') {
         const mins = Math.round(s.duration/60);
-        parts.push(mins+ ' min fits ~' + item.context.availableTime + ' min');
+        parts.push(mins+ ' min');
       }
       if (s.energy_level) parts.push(s.energy_level + ' energy');
       if (typeof s.difficulty_level === 'number' && item?.user?.skillLevel) {
@@ -82,38 +139,20 @@
         const rel = diff === 0 ? 'at your level' : (diff > 0 ? ('+'+diff+' harder') : (Math.abs(diff)+' easier'));
         parts.push(rel);
       }
-      if (typeof b.moodAlignment === 'number') parts.push('mood match ' + Math.round(b.moodAlignment*100) + '%');
+      if (typeof b.moodAlignment === 'number') parts.push('mood ' + Math.round(b.moodAlignment*100) + '%');
       return parts.join(' · ');
     }
 
-    let rerollState = {};
-    async function showUser(userId, offset){
+    async function showUser(userId){
       const panel = document.getElementById('panel');
       panel.style.display = 'block';
-      panel.innerHTML = '<div class="muted">Working…</div>';
+      panel.innerHTML = '<div class="muted">Loading user…</div>';
       const item = (overview.users || []).find(x => x.id === userId);
-      let suggestion = item?.suggestion || null;
-      // If not present, fetch it using derived mood
-      if (!suggestion || (typeof offset === 'number' && offset > 0)) {
-        const mood = item?.derivedMood || 'neutral';
-        const timeOfDay = item?.context?.timeOfDay || 'evening';
-        const goals = item?.context?.goals || (mood === 'energetic' ? 'challenge' : 'relax');
-        const q = new URLSearchParams({ userId, mood, timeOfDay, availableTime: 20, goals, offset: offset || 0 });
-        const res = await fetch('/api/demo/user-suggestion?' + q.toString());
-        const data = await res.json();
-        suggestion = data.suggestion || null;
-      }
       if (!item) { panel.innerHTML = '<div class="muted">User not found</div>'; return; }
-      if (!suggestion) {
-        panel.innerHTML = `<div class='title'>${item.name}</div>
-          <div class='muted'>${item.blurb}</div>
-          <div class='song'><em>No suggestion found</em></div>`;
-        return;
-      }
       const prof = item.user || {};
       const sum = item.summary || {};
       const src = sum.source ? (' (' + sum.source + ')') : '';
-      const s = suggestion || {};
+      const s = item.suggestion || {};
       panel.innerHTML = `
         <div class='title'>${item.name}</div>
         <div class='grid2 row'>
@@ -133,17 +172,43 @@
           </div>
         </div>
         <div class='row muted'>Mood: ${item.derivedMood} · Time: ${item.context.timeOfDay} · Goal: ${item.context.goals}</div>
-        <div class='song row'><div><strong>${s.title || s.SONG_TITLE}</strong> — ${s.artist || s.ARTIST_NAME || 'Unknown'}</div>
-          <div class='muted'>Score: ${s.contextualScore ?? 'N/A'} · Energy: ${s.energy_level || 'n/a'} · Diff: ${s.difficulty_level ?? 'n/a'} · Comfort: ${(s.scoringBreakdown && typeof s.scoringBreakdown.comfortZone === 'number') ? Math.round(s.scoringBreakdown.comfortZone*100)+'%' : 'n/a'}</div>
+        <div class='song row'><div><strong>${s.title || s.SONG_TITLE || '—'}</strong> — ${s.artist || s.ARTIST_NAME || '—'}</div>
+          <div class='muted'>Score: ${s.contextualScore ?? 'N/A'} · Energy: ${s.energy_level || 'n/a'} · Diff: ${s.difficulty_level ?? 'n/a'}</div>
           <div class='muted'>${whyLine(item, s)}</div>
         </div>
-        <div class='actions'><button class='btn' id='rerollBtn'>Reroll</button></div>
       `;
-      // Wire reroll button to pick the next candidate in the list
-      rerollState[userId] = (rerollState[userId] || 0) + 1;
-      const btn = document.getElementById('rerollBtn');
-      if (btn) btn.onclick = () => showUser(userId, rerollState[userId]);
     }
+
+    async function refreshTopN(){
+      if (!currentUserId) return;
+      const list = document.getElementById('list');
+      list.style.display = 'block';
+      list.innerHTML = '<div class="muted">Fetching suggestions…</div>';
+      const mood = document.getElementById('mood').value;
+      const timeOfDay = document.getElementById('timeOfDay').value;
+      const minutes = document.getElementById('minutes').value;
+      const goals = document.getElementById('goals').value;
+      const explore = document.getElementById('explore').value;
+      const k = document.getElementById('k').value;
+      const lambda = document.getElementById('lambda').value;
+      const q = new URLSearchParams({ userId: currentUserId, mood, timeOfDay, availableTime: minutes, goals, explore, k, lambda });
+      const res = await fetch('/api/demo/user-suggestions?' + q.toString());
+      const data = await res.json();
+      const item = (overview.users || []).find(x => x.id === currentUserId) || { context: data.context, user: { skillLevel: 5 } };
+      list.innerHTML = `<div class='title'>Top ${data.k} suggestions</div>` +
+        (data.suggestions||[]).map(s => `
+          <div class='song'>
+            <div><strong>${s.title || s.SONG_TITLE}</strong> — ${s.artist || s.ARTIST_NAME || 'Unknown'}</div>
+            <div class='muted'>Score: ${s.contextualScore ?? 'N/A'} · Energy: ${s.energy_level || 'n/a'} · Diff: ${s.difficulty_level ?? 'n/a'}</div>
+            <div class='muted'>${whyLine(item, s)}</div>
+          </div>
+        `).join('');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('applyBtn').onclick = refreshTopN;
+    });
+
     load();
   </script>
 </body>

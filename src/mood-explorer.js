@@ -86,39 +86,40 @@ class MoodExplorer {
   }
 
   /**
-   * Score songs based on mood and context fit
-   * @param {Array} songs - Array of songs to score
-   * @param {Object} context - Context with mood, goals, etc.
-   * @returns {Array} Songs with mood scores
+   * Apply adaptive, context-aware scoring to songs
    */
   scoreSongsByMood(songs, context) {
     return songs.map(song => {
       let score = 0;
       const weights = this.getContextualWeights(context);
+
+      // Adapt mood weight by per-song evidence confidence (0.8..1.2x)
+      const evidenceConfidence = this.getMoodEvidenceConfidence(song);
+      const adaptiveWeights = { ...weights, mood: Math.max(0, Math.min(1, weights.mood * (0.8 + 0.4 * evidenceConfidence))) };
       
       // Base comfort zone score (existing recommendation logic)
       const comfortZoneScore = this.getComfortZoneScore(song, context.userProfile || {});
-      score += comfortZoneScore * weights.comfortZone;
+      score += comfortZoneScore * adaptiveWeights.comfortZone;
       
       // Mood alignment scoring with enhanced logic
       const moodScore = this.getEnhancedMoodAlignmentScore(song, context);
-      score += moodScore * weights.mood;
+      score += moodScore * adaptiveWeights.mood;
       
       // Time-based scoring with energy correlation
       const timeScore = this.getEnhancedTimeBasedScore(song, context.timeOfDay, context.mood);
-      score += timeScore * weights.time;
+      score += timeScore * adaptiveWeights.time;
       
       // Duration fit scoring with preference curves
       const durationScore = this.getEnhancedDurationFitScore(song, context.availableTime);
-      score += durationScore * weights.duration;
+      score += durationScore * adaptiveWeights.duration;
       
       // Goal alignment scoring with skill progression
       const goalScore = this.getEnhancedGoalAlignmentScore(song, context.goals, context.userProfile);
-      score += goalScore * weights.goal;
+      score += goalScore * adaptiveWeights.goal;
       
       // Exploration bonus for variety
       const explorationScore = this.getExplorationScore(song, context);
-      score += explorationScore * weights.exploration;
+      score += explorationScore * adaptiveWeights.exploration;
       
       return {
         ...song,
@@ -130,10 +131,91 @@ class MoodExplorer {
           durationFit: Math.round(durationScore * 100) / 100,
           goalAlignment: Math.round(goalScore * 100) / 100,
           exploration: Math.round(explorationScore * 100) / 100,
-          weights: weights
+          weights: adaptiveWeights,
+          evidenceConfidence
         }
       };
     }).sort((a, b) => b.contextualScore - a.contextualScore);
+  }
+
+  /**
+   * Estimate per-song confidence for mood evidence (0..1)
+   */
+  getMoodEvidenceConfidence(song) {
+    let conf = 0;
+    let parts = 0;
+    // Style tags presence and richness
+    parts++; conf += Math.min(1, (song.style_tags?.length || 0) / 4);
+    // Energy signal present
+    parts++; conf += song.energy_level ? 1 : 0.5;
+    // LLM enhancement confidence if available
+    if (song.llmEnhancement && typeof song.llmEnhancement.confidence === 'number') {
+      parts++; conf += Math.max(0, Math.min(1, song.llmEnhancement.confidence));
+    }
+    // Behavioral signals hint (when present)
+    if (song.behavioralSignals && song.behavioralSignals.behavioralType) {
+      parts++; conf += 0.8;
+    }
+    return parts > 0 ? Math.max(0, Math.min(1, conf / parts)) : 0.5;
+  }
+
+  /**
+   * Diversity-aware reranking (MMR-like)
+   * @param {Array} scoredSongs - Songs with contextualScore
+   * @param {number} k - number of items to return
+   * @param {number} lambda - 0..1 relevance-vs-diversity tradeoff (higher=more relevance)
+   * @returns {Array}
+   */
+  rerankWithDiversity(scoredSongs, k = 10, lambda = 0.7) {
+    const selected = [];
+    const candidates = [...scoredSongs];
+
+    const similarity = (a, b) => {
+      if (!a || !b) return 0;
+      let sim = 0;
+      // Same artist gets a high penalty to avoid duplicates
+      const aArtist = (a.artist || a.ARTIST_NAME || '').toLowerCase();
+      const bArtist = (b.artist || b.ARTIST_NAME || '').toLowerCase();
+      if (aArtist && bArtist && aArtist === bArtist) sim += 0.8;
+      // Genre overlap
+      const ag = new Set((a.genre_tags || []).map(x => String(x).toLowerCase()));
+      const bg = new Set((b.genre_tags || []).map(x => String(x).toLowerCase()));
+      if (ag.size > 0 && bg.size > 0) {
+        const overlap = Array.from(ag).filter(x => bg.has(x)).length;
+        sim += Math.min(0.4, overlap * 0.2);
+      }
+      // Style tag overlap
+      const as = new Set((a.style_tags || []).map(x => String(x).toLowerCase()));
+      const bs = new Set((b.style_tags || []).map(x => String(x).toLowerCase()));
+      if (as.size > 0 && bs.size > 0) {
+        const overlap = Array.from(as).filter(x => bs.has(x)).length;
+        sim += Math.min(0.4, overlap * 0.1);
+      }
+      return Math.max(0, Math.min(1, sim));
+    };
+
+    while (selected.length < k && candidates.length > 0) {
+      let best = null;
+      let bestScore = -Infinity;
+      for (const c of candidates) {
+        const rel = typeof c.contextualScore === 'number' ? c.contextualScore : 0;
+        let divPenalty = 0;
+        if (selected.length > 0) {
+          const maxSim = Math.max(...selected.map(s => similarity(c, s)));
+          divPenalty = maxSim;
+        }
+        const mmr = lambda * rel - (1 - lambda) * divPenalty;
+        if (mmr > bestScore) {
+          bestScore = mmr;
+          best = c;
+        }
+      }
+      if (!best) break;
+      selected.push(best);
+      const idx = candidates.indexOf(best);
+      if (idx >= 0) candidates.splice(idx, 1);
+    }
+    return selected;
   }
 
   /**

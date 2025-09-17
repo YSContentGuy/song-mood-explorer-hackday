@@ -45,6 +45,13 @@ global.__YS_SHARED_DATASET_LOADER = datasetLoader;
         .catch(() => {});
     }
 
+    // Precompute unified mood profiles for faster demo endpoints
+    if (datasetLoader.unifiedMoodProfiles.length === 0) {
+      const t0 = Date.now();
+      await datasetLoader.createUnifiedMoodProfiles({ maxSongs: 50, useEnhancedSongs: true });
+      console.log(`Unified mood profiles ready (${datasetLoader.unifiedMoodProfiles.length}) in ${Date.now()-t0}ms`);
+    }
+
     console.log('Dataset ready: Pavel CSV + LLM-enhanced tags merged.');
   } catch (e) {
     console.log('Startup dataset init fallback:', e.message);
@@ -65,6 +72,7 @@ app.get('/api', (req, res) => {
       '/mood/search': 'GET - Search songs by mood',
       '/mood/analyze-patterns': 'POST - Analyze user mood patterns from play history',
       '/mood/suggestions': 'GET - Get mood suggestions based on time and context',
+      '/demo/user-suggestions': 'GET - Top-N suggestions with diversity-aware reranking',
       '/health': 'GET - Health check'
     },
     contextualFactors: [
@@ -76,6 +84,42 @@ app.get('/api', (req, res) => {
       'Energy levels'
     ]
   });
+});
+
+// New: Top-N suggestions with diversity-aware reranking
+app.get('/api/demo/user-suggestions', async (req, res) => {
+  try {
+    const { userId, mood = 'neutral', timeOfDay, availableTime = 15, goals = 'relax', explore = 'false', k = 3, lambda = 0.7 } = req.query;
+
+    const client = new YousicianClient();
+    await client.ensureDatasetLoaded();
+
+    const users = datasetLoader.getMockUserProfiles();
+    const user = users.find(u => u.id === userId) || users[0];
+
+    const context = {
+      mood,
+      timeOfDay: timeOfDay || new MoodExplorer().getTimeSlot(new Date().getHours()),
+      availableTime: parseInt(availableTime),
+      goals,
+      exploreNewMoods: String(explore).toLowerCase() === 'true'
+    };
+
+    // Produce a generously sized candidate list then rerank with diversity
+    const candidates = await new MoodExplorer().getContextualRecommendations(user, context);
+    const scored = Array.isArray(candidates) ? candidates : [];
+    const top = new MoodExplorer().rerankWithDiversity(scored, parseInt(k) || 3, Math.max(0, Math.min(1, parseFloat(lambda) || 0.7)));
+
+    res.json({
+      user: { id: user.id, name: user.name },
+      context,
+      k: parseInt(k) || 3,
+      lambda: Math.max(0, Math.min(1, parseFloat(lambda) || 0.7)),
+      suggestions: top
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Overview for 3 pretend users with auto mood + suggestion derived from dataset
