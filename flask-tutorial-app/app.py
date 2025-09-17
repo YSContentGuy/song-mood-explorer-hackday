@@ -1,6 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import os
 import json
+import time
+import hashlib
 import urllib.request
 import urllib.error
 
@@ -28,6 +30,8 @@ def get_items():
 def api_llm():
     """Call an OpenAI-compatible LLM endpoint and return the response text.
 
+    Falls back to a local demo mode if OPENAI_API_KEY is not set.
+
     Expects JSON body:
       {
         "prompt": "...",            # required
@@ -38,7 +42,7 @@ def api_llm():
       }
 
     Environment variables:
-      OPENAI_API_KEY   (required)
+      OPENAI_API_KEY   (optional; if absent, demo mode is used)
       OPENAI_BASE_URL  (default: https://api.openai.com/v1)
       OPENAI_MODEL     (default: gpt-4o-mini)
     """
@@ -54,7 +58,17 @@ def api_llm():
 
     api_key = os.environ.get('OPENAI_API_KEY')
     if not api_key:
-        return jsonify({"error": "OPENAI_API_KEY is not set in the environment."}), 400
+        # Demo mode: deterministic pseudo-response based on prompt hash
+        time.sleep(0.4)  # simulate latency
+        h = hashlib.sha256(user_prompt.encode('utf-8')).hexdigest()[:8]
+        demo_reply = (
+            f"[Demo mode]\n"
+            f"Model: {model_name}\n"
+            f"Prompt hash: {h}\n\n"
+            f"Echo: {user_prompt}\n"
+            f"Tip: Set OPENAI_API_KEY in .env to call a real LLM."
+        )
+        return jsonify({"text": demo_reply, "model": f"demo::{model_name}"})
 
     base_url = os.environ.get('OPENAI_BASE_URL', 'https://api.openai.com/v1')
     endpoint = f"{base_url.rstrip('/')}/chat/completions"
