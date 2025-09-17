@@ -117,12 +117,28 @@ app.get('/api/demo/users-overview', async (req, res) => {
       }
     };
 
-    const timeOfDay = new MoodExplorer().getTimeSlot(new Date().getHours());
+    // Assign diverse times of day based on user characteristics
+    const getTimeOfDay = (userProfile) => {
+      switch (userProfile.id) {
+        case 'user_beginner':
+          // Beginners often practice in the evening when they have time
+          return 'evening';
+        case 'user_intermediate':
+          // Intermediate users practice in the afternoon for energy
+          return 'afternoon';
+        case 'user_advanced':
+          // Advanced users often practice in the morning for focus
+          return 'morning';
+        default:
+          return new MoodExplorer().getTimeSlot(new Date().getHours());
+      }
+    };
 
     const results = [];
     for (const u of users) {
       const summary = client.datasetLoader.summarizeForGenres(u.genrePreferences);
       const mood = pickMood(summary, u);
+      const timeOfDay = getTimeOfDay(u);
       // Set goals based on mood for more diverse behavior
       const goals = mood === 'energetic' || mood === 'focused' ? 'challenge' : 'relax';
       const context = { mood, timeOfDay, availableTime: 20, goals, exploreNewMoods: true };
