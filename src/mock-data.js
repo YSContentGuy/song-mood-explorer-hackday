@@ -315,30 +315,55 @@ const mockUserProfiles = [
   {
     id: "user_beginner",
     name: "Sarah (Beginner Guitar Player)",
-    skillLevel: 2,
+    age: 15,
+    skillLevel: 3,
     instrument: "guitar",
-    genrePreferences: ["pop", "rock", "acoustic"],
+    genrePreferences: ["pop", "acoustic", "r&b"],
     genreAvoidance: ["metal", "hard_rock"],
-    playingExperience: "6 months",
+    playingExperience: "9 months",
     practiceFrequency: "3 times per week",
     preferredDifficulty: [1, 2, 3],
-    learningGoals: ["basic_chords", "strumming_patterns"]
+    learningGoals: ["basic_chords", "strumming_patterns"],
+    popularityPreference: 0.7, // Prefers well-known songs for motivation
+    // Realistic behavioral data for a casual player who REQUIRES comfort zone
+    totalSongsPlayed: 35,
+    subscriptionTime: "6 months",
+    songsReturnedTo: 6, // Fewer songs in comfort zone - casual player
+    typicalDifficulty: 2.1, // Stays in beginner range
+    comfortZoneDifficulty: [1, 2], // Only comfortable with very easy songs
+    comfortZoneStyles: ["acoustic", "pop", "r&b"], // Styles they're comfortable with
+    learningStyle: "comfort_zone_required", // NEEDS to stay in comfort zone to stay motivated
+    dominantEnergy: "medium",
+    topStyleTags: ["acoustic", "pop", "r&b"]
   },
   {
     id: "user_intermediate",
     name: "Mike (Intermediate Guitar Player)",
-    skillLevel: 5,
+    age: 20,
+    skillLevel: 6,
     instrument: "guitar",
-    genrePreferences: ["rock", "alternative", "country"],
+    genrePreferences: ["country", "folk", "alternative"],
     genreAvoidance: ["classical"],
     playingExperience: "3 years",
     practiceFrequency: "daily",
     preferredDifficulty: [4, 5, 6],
-    learningGoals: ["lead_guitar", "improvisation", "song_writing"]
+    learningGoals: ["lead_guitar", "improvisation", "song_writing"],
+    popularityPreference: 0.8, // Prefers commercial/popular songs
+    // Realistic behavioral data for an adventurous player who LEAST needs comfort zone
+    totalSongsPlayed: 420,
+    subscriptionTime: "2.5 years",
+    songsReturnedTo: 45, // More songs in comfort zone - dedicated player
+    typicalDifficulty: 4.8, // Comfortable with intermediate songs
+    comfortZoneDifficulty: [3, 4, 5], // Comfortable with intermediate range
+    comfortZoneStyles: ["country", "folk", "alternative", "acoustic"], // Styles they're comfortable with
+    learningStyle: "comfort_zone_least_important", // LEAST needs comfort zone - loves challenges
+    dominantEnergy: "high",
+    topStyleTags: ["country", "folk", "alternative"]
   },
   {
     id: "user_advanced",
     name: "Alex (Advanced Guitar Player)",
+    age: 32,
     skillLevel: 8,
     instrument: "guitar",
     genrePreferences: ["metal", "hard_rock", "progressive"],
@@ -346,7 +371,18 @@ const mockUserProfiles = [
     playingExperience: "10+ years",
     practiceFrequency: "daily",
     preferredDifficulty: [7, 8, 9, 10],
-    learningGoals: ["technical_mastery", "complex_compositions"]
+    learningGoals: ["technical_mastery", "complex_compositions"],
+    popularityPreference: 0.2, // Prefers challenging, niche songs over mainstream hits
+    // Realistic behavioral data for a player who likes comfort zone but has become more adventurous over time
+    totalSongsPlayed: 1800,
+    subscriptionTime: "4 years",
+    songsReturnedTo: 120, // Many songs in comfort zone - very focused player
+    typicalDifficulty: 7.2, // Comfortable with advanced songs
+    comfortZoneDifficulty: [6, 7, 8], // Comfortable with advanced range
+    comfortZoneStyles: ["metal", "progressive", "technical", "hard_rock"], // Styles they're comfortable with
+    learningStyle: "comfort_zone_preferred_but_adventurous", // Likes comfort zone but has played so much he's become more adventurous
+    dominantEnergy: "very_high",
+    topStyleTags: ["metal", "progressive", "technical"]
   }
 ];
 

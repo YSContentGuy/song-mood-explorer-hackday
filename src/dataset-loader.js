@@ -283,6 +283,64 @@ class DatasetLoader {
   }
 
   /**
+   * Enhance songs with LLM-generated popularity assessments
+   */
+  async enhanceSongsWithPopularityAssessment(options = {}) {
+    const { maxSongs = 30 } = options;
+    
+    if (!this.isLoaded) {
+      await this.loadSongDataset();
+    }
+
+    console.log('Starting LLM popularity assessment...');
+    
+    // Get a sample of songs for popularity assessment
+    const songsToAssess = this.songs.slice(0, maxSongs);
+    const popularityAssessments = [];
+    
+    for (let i = 0; i < songsToAssess.length; i++) {
+      const song = songsToAssess[i];
+      try {
+        const assessment = await this.llmMoodEnhancer.generatePopularityAssessment(song);
+        popularityAssessments.push({
+          ...song,
+          llmPopularityAssessment: assessment
+        });
+        
+        if ((i + 1) % 5 === 0) {
+          console.log(`Popularity Assessment Progress: ${i + 1}/${songsToAssess.length}`);
+        }
+        
+        // Rate limiting: small delay between requests
+        if (i < songsToAssess.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch (error) {
+        // Silently fail for individual songs to avoid spam
+        popularityAssessments.push(song);
+      }
+    }
+
+    // Merge popularity assessments back into the base dataset
+    const byId = new Map();
+    this.songs.forEach((s, idx) => {
+      const key = s.SONG_ID || s.id;
+      if (key) byId.set(key, idx);
+    });
+    
+    popularityAssessments.forEach(pa => {
+      const key = pa.SONG_ID || pa.id;
+      if (!key || !pa.llmPopularityAssessment) return;
+      const idx = byId.get(key);
+      if (idx === undefined) return;
+      this.songs[idx].llmPopularityAssessment = pa.llmPopularityAssessment;
+    });
+
+    console.log(`Successfully assessed popularity for ${popularityAssessments.length} songs`);
+    return popularityAssessments;
+  }
+
+  /**
    * Get songs with LLM enhancements
    */
   getEnhancedSongs(limit = 10) {

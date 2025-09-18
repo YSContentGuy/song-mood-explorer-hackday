@@ -31,7 +31,17 @@
     <h1>Song Mood Explorer</h1>
     <div class="sub">AI-Enhanced Music Recommendations with Behavioral Intelligence</div>
     
-    <div class="sub">Three user profiles. Click one to see how our system analyzes behavioral patterns to infer mood and provide intelligent recommendations.</div>
+    <div class="sub">Three user profiles. Click one to see how our system analyzes behavioral patterns (how users actually play songs) to infer mood and provide intelligent recommendations.</div>
+    
+    <div style="background:#e8f4fd; border:1px solid #b3d9ff; border-radius:8px; padding:12px; margin:16px 0; font-size:14px;">
+      <div style="font-weight:600; margin-bottom:8px;">📊 Understanding the Scores:</div>
+      <div style="color:#555; line-height:1.5;">
+        <div style="margin-bottom:8px;"><strong>🎯 Overall Match (0-100%):</strong> The final score combining all factors - how well this song fits you overall</div>
+        <div style="margin-bottom:8px;"><strong>🏠 Comfort Zone (0-100%):</strong> How familiar you are with this musical style and difficulty level based on your past playing (combines both style and difficulty comfort)</div>
+        <div style="margin-bottom:8px;"><strong>😊 Mood Match (0-100%):</strong> How well the song's emotional energy and style matches your current mood (inferred from your playing patterns)</div>
+        <div style="margin-bottom:8px;"><strong>📈 Playing Patterns:</strong> Shows your actual playing behavior - songs you return to, styles you play most, typical difficulty, comfort zone difficulty range, comfort zone styles, and learning style</div>
+      </div>
+    </div>
     <div id="buttons" class="buttons">Loading…</div>
     <div id="panel" class="panel" style="display:none"></div>
   </div>
@@ -75,19 +85,34 @@
       const s = suggestion || {};
       const b = s.scoringBreakdown || {};
       const parts = [];
-      if (item?.context) parts.push(item.context.timeOfDay + ', ' + item.context.goals);
+      
+      // Context explanation
+      if (item?.context) {
+        const timeContext = item.context.timeOfDay === 'morning' ? 'morning practice' : 
+                           item.context.timeOfDay === 'afternoon' ? 'afternoon session' : 'evening practice';
+        const goalContext = item.context.goals === 'challenge' ? 'looking to challenge yourself' : 'wanting to relax';
+        parts.push(`Perfect for ${timeContext} when you're ${goalContext}`);
+      }
+      
+      // Duration fit
       if (typeof s.duration === 'number' && item?.context?.availableTime) {
         const mins = Math.round(s.duration/60);
-        parts.push(mins+ ' min fits ~' + item.context.availableTime + ' min');
+        parts.push(`${mins}-minute song fits your ${item.context.availableTime}-minute session`);
       }
-      if (s.energy_level) parts.push(s.energy_level + ' energy');
+      
+      // Difficulty explanation
       if (typeof s.difficulty_level === 'number' && item?.user?.skillLevel) {
         const diff = s.difficulty_level - item.user.skillLevel;
-        const rel = diff === 0 ? 'at your level' : (diff > 0 ? ('+'+diff+' harder') : (Math.abs(diff)+' easier'));
-        parts.push(rel);
+        if (diff === 0) {
+          parts.push('perfect difficulty match for your skill level');
+        } else if (diff > 0) {
+          parts.push(`${diff} levels above your skill (good challenge)`);
+        } else {
+          parts.push(`${Math.abs(diff)} levels below your skill (comfortable)`);
+        }
       }
-      if (typeof b.moodAlignment === 'number') parts.push('mood match ' + Math.round(b.moodAlignment*100) + '%');
-      return parts.join(' · ');
+      
+      return parts.join(' • ');
     }
 
     let rerollState = {};
@@ -128,21 +153,42 @@
             <div><strong>Profile</strong></div>
             <div class='muted'>Skill: ${prof.skillLevel ?? 'n/a'}</div>
             <div class='muted'>Practice: ${prof.practiceFrequency || prof.practice || 'n/a'}</div>
-            <div class='muted'>Pref. difficulty: ${(prof.preferredDifficulty ? (Array.isArray(prof.preferredDifficulty)? prof.preferredDifficulty.join(', ') : prof.preferredDifficulty) : 'n/a')}</div>
+            <div class='muted'>Pref. difficulty: ${(prof.preferredDifficulty ? (Array.isArray(prof.preferredDifficulty)? prof.preferredDifficulty.join(', ') : prof.preferredDifficulty) : 'n/a')} (based on app difficulty levels)</div>
             <div class='muted'>Genres: ${(prof.genrePreferences||prof.genres||[]).join(', ')}</div>
+            <div class='muted'>Age: ${prof.age || 'n/a'}</div>
+            <div class='muted'>Total songs played: ${prof.totalSongsPlayed || 'n/a'}</div>
+            <div class='muted'>Subscription time: ${prof.subscriptionTime || 'n/a'}</div>
+            <div class='muted'>Learning style: ${prof.learningStyle || 'n/a'}</div>
           </div>
           <div>
-            <div><strong>Data overview${src}</strong></div>
-            <div class='muted'>Matches: ${sum.count ?? 0}</div>
-            <div class='muted'>Avg difficulty: ${sum.avgDifficulty ?? 'n/a'}</div>
-            <div class='muted'>Energy: ${sum.dominantEnergy || 'n/a'}</div>
-            <div class='muted'>Top tags: ${(sum.topStyleTags||[]).slice(0,3).join(', ')}</div>
+            <div><strong>Playing Patterns${src}</strong></div>
+            <div class='muted' style='font-size:11px; color:#999; margin-bottom:4px;'>Analysis of how this user actually plays songs</div>
+            <div class='muted'>Songs they return to: ${sum.count ?? 0}</div>
+            <div class='muted'>Typical difficulty: ${sum.avgDifficulty ?? 'n/a'}</div>
+            <div class='muted'>Comfort zone difficulty: ${(prof.comfortZoneDifficulty || []).join(', ')}</div>
+            <div class='muted'>Comfort zone styles: ${(prof.comfortZoneStyles || []).join(', ')}</div>
+            <div class='muted'>Preferred energy: ${sum.dominantEnergy || 'n/a'}</div>
+            <div class='muted'>Styles they play most: ${(sum.topStyleTags||[]).slice(0,3).join(', ')}</div>
           </div>
         </div>
         <div class='row muted'>Inferred Mood: <strong>${item.derivedMood}</strong> · Time: ${item.context.timeOfDay} · Goal: ${item.context.goals}</div>
-        <div class='song row'><div><strong>${s.title || s.SONG_TITLE}</strong> — ${s.artist || s.ARTIST_NAME || 'Unknown'}</div>
-          <div class='muted'>Score: ${s.contextualScore ?? 'N/A'} · Energy: ${s.energy_level || 'n/a'} · Diff: ${s.difficulty_level ?? 'n/a'} · Comfort: ${(s.scoringBreakdown && typeof s.scoringBreakdown.comfortZone === 'number') ? Math.round(s.scoringBreakdown.comfortZone*100)+'%' : 'n/a'}</div>
-          <div class='muted'>${whyLine(item, s)}</div>
+        <div class='song row'>
+          <div><strong>${s.title || s.SONG_TITLE}</strong> — ${s.artist || s.ARTIST_NAME || 'Unknown'}</div>
+          
+          <div style='margin-top:8px; padding:10px; background:#f8f9fa; border-radius:6px; font-size:13px;'>
+            <div style='font-weight:600; margin-bottom:6px;'>🎯 Recommendation Scores:</div>
+            <div style='display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:6px;'>
+              <div class='muted'><strong>🎯 Overall Match:</strong><br/>${s.contextualScore ? Math.round(s.contextualScore*100)+'%' : 'N/A'}<br/><span style='font-size:11px; color:#888;'>Final combined score</span></div>
+              <div class='muted'><strong>🏠 Comfort Zone:</strong><br/>${(s.scoringBreakdown && typeof s.scoringBreakdown.comfortZone === 'number') ? Math.round(s.scoringBreakdown.comfortZone*100)+'%' : 'n/a'}<br/><span style='font-size:11px; color:#888;'>Style & difficulty familiarity</span></div>
+            </div>
+            <div style='display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:6px;'>
+              ${(s.scoringBreakdown && typeof s.scoringBreakdown.moodAlignment === 'number') ? `<div class='muted'><strong>😊 Mood Match:</strong><br/>${Math.round(s.scoringBreakdown.moodAlignment*100)}%<br/><span style='font-size:11px; color:#888;'>Emotional energy match</span></div>` : '<div></div>'}
+              <div class='muted'><strong>⚡ Energy:</strong><br/>${s.energy_level || 'n/a'}<br/><span style='font-size:11px; color:#888;'>Song intensity</span></div>
+            </div>
+            <div class='muted'><strong>🎸 Difficulty:</strong> ${s.difficulty_level ?? 'n/a'}/10 (based on app difficulty levels)</div>
+          </div>
+          
+          <div class='muted' style='margin-top:6px; font-size:12px;'>${whyLine(item, s)}</div>
           ${aiExplanation ? `<div class='ai-explanation'><strong>🤖 AI Insight:</strong> ${aiExplanation.explanation}</div>` : '<div class="muted">No AI explanation available</div>'}
         </div>
         <div class='actions'><button class='btn' id='rerollBtn'>Reroll</button></div>

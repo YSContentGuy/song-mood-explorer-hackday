@@ -38,7 +38,20 @@ class MoodExplorer {
     const filters = this.buildContextualFilters(userProfile, context);
     
     // Get songs that match contextual criteria
-    const songs = await this.client.searchSongs(filters);
+    let songs = await this.client.searchSongs(filters);
+    
+    // If we don't have enough songs for good mood matching, get more with relaxed filters
+    if (songs.length < 50) {
+      const relaxedFilters = {
+        ...filters,
+        limit: 200, // Get more songs for better mood matching
+        // Remove restrictive filters that might limit our pool
+        style_tags: undefined, // Let mood scoring handle this
+        energy_level: undefined // Let mood scoring handle this
+      };
+      const moreSongs = await this.client.searchSongs(relaxedFilters);
+      songs = [...songs, ...moreSongs];
+    }
     
     // Apply mood-based scoring (augment context with user profile)
     return this.scoreSongsByMood(songs, { ...context, userProfile });
@@ -62,13 +75,34 @@ class MoodExplorer {
       filters.max_duration = this.getDurationForAvailableTime(context.availableTime);
     }
     
-    // Goal-based filters
+    // Goal-based filters - respect learning styles
+    const learningStyle = userProfile?.learningStyle || '';
+    
     if (context.goals === 'challenge') {
-      filters.min_difficulty = (userProfile?.skillLevel || 3) + 1; // Push boundaries
+      // Encourage growth for everyone, but respect learning styles
+      if (learningStyle === 'comfort_zone_required') {
+        // Sarah: Gentle encouragement - start at skill level, go up 1
+        filters.min_difficulty = userProfile?.skillLevel || 3;
+        filters.max_difficulty = (userProfile?.skillLevel || 3) + 1; // Gentle challenge
+      } else if (learningStyle === 'comfort_zone_least_important') {
+        // Mike: Loves challenges - push boundaries more
+        filters.min_difficulty = (userProfile?.skillLevel || 3) + 1;
+        filters.max_difficulty = Math.min(10, (userProfile?.skillLevel || 3) + 3);
+      } else {
+        // Alex and default: Moderate challenge
+        filters.min_difficulty = (userProfile?.skillLevel || 3) + 1;
+        filters.max_difficulty = Math.min(10, (userProfile?.skillLevel || 3) + 2);
+      }
       filters.density = 'high'; // More notes/chords
     } else if (context.goals === 'relax') {
-      // Keep within/at skill level to avoid over-restricting beginners
-      filters.max_difficulty = Math.max(1, (userProfile?.skillLevel || 3));
+      // Stay in comfort zone for relaxation
+      if (learningStyle === 'comfort_zone_required') {
+        // Sarah: Stay well within comfort zone
+        filters.max_difficulty = Math.max(1, (userProfile?.skillLevel || 3) - 1);
+      } else {
+        // Others: Stay at or below skill level
+        filters.max_difficulty = Math.max(1, (userProfile?.skillLevel || 3));
+      }
       filters.style_tags = ['calm', 'peaceful', 'slow'];
     }
     
@@ -121,8 +155,8 @@ class MoodExplorer {
       const explorationScore = this.getExplorationScore(song, context);
       score += explorationScore * weights.exploration;
       
-      // Popularity scoring (proven appeal)
-      const popularityScore = this.getPopularityScore(song);
+      // Popularity scoring (proven appeal + user preference alignment)
+      const popularityScore = this.getEnhancedPopularityScore(song, context.userProfile);
       score += popularityScore * weights.popularity;
       
       return {
@@ -144,17 +178,38 @@ class MoodExplorer {
 
   /**
    * Estimate a "comfort zone" score from user preferences and difficulty proximity
+   * Adjusted based on learning style preferences
    */
   getComfortZoneScore(song, userProfile) {
     let score = 0.5; // neutral baseline
 
-    // Difficulty proximity (closer to skillLevel is better)
+    // Difficulty proximity (closer to skillLevel is better, but adjusted by learning style)
     if (userProfile && typeof userProfile.skillLevel === 'number' && typeof song.difficulty_level === 'number') {
       const gap = Math.abs(song.difficulty_level - userProfile.skillLevel);
-      if (gap === 0) score += 0.4;
-      else if (gap === 1) score += 0.3;
-      else if (gap === 2) score += 0.15;
-      else score += 0.0;
+      let difficultyBonus = 0;
+      
+      if (gap === 0) difficultyBonus = 0.4;
+      else if (gap === 1) difficultyBonus = 0.3;
+      else if (gap === 2) difficultyBonus = 0.15;
+      else difficultyBonus = 0.0;
+      
+      // Adjust based on learning style - more encouraging approach
+      const learningStyle = userProfile.learningStyle || '';
+      if (learningStyle === 'comfort_zone_required') {
+        // Sarah: Prefer comfort zone, but don't completely exclude growth
+        if (gap > 1) difficultyBonus *= 0.5; // Moderate penalty for challenging songs (was 0.3)
+        else if (gap === 1) difficultyBonus *= 0.8; // Light penalty for slightly challenging (was 0.7)
+      } else if (learningStyle === 'comfort_zone_least_important') {
+        // Mike: LEAST needs comfort zone - reward challenging songs
+        if (gap > 1) difficultyBonus *= 1.5; // Bonus for challenging songs
+        else if (gap === 0) difficultyBonus *= 0.8; // Slight penalty for too easy
+      } else if (learningStyle === 'comfort_zone_preferred_but_adventurous') {
+        // Alex: Likes comfort zone but has become more adventurous over time
+        if (gap > 2) difficultyBonus *= 1.2; // Slight bonus for very challenging
+        else if (gap === 0) difficultyBonus *= 1.1; // Slight bonus for comfort zone
+      }
+      
+      score += difficultyBonus;
     }
 
     // Genre preference match - check both genre_tags and style_tags
@@ -171,8 +226,24 @@ class MoodExplorer {
         matches += song.style_tags.filter(tag => userProfile.genrePreferences.includes(tag)).length;
       }
       
-      if (matches >= 2) score += 0.3;
-      else if (matches === 1) score += 0.2;
+      let genreBonus = 0;
+      if (matches >= 2) genreBonus = 0.3;
+      else if (matches === 1) genreBonus = 0.2;
+      
+      // Adjust genre preference based on learning style
+      const learningStyle = userProfile.learningStyle || '';
+      if (learningStyle === 'comfort_zone_required') {
+        // Sarah: Heavily reward familiar genres
+        genreBonus *= 1.3;
+      } else if (learningStyle === 'comfort_zone_least_important') {
+        // Mike: Less emphasis on familiar genres, more on exploration
+        genreBonus *= 0.8;
+      } else if (learningStyle === 'comfort_zone_preferred_but_adventurous') {
+        // Alex: Moderate preference for familiar genres
+        genreBonus *= 1.0;
+      }
+      
+      score += genreBonus;
     }
 
     return Math.min(1.0, Math.max(0.0, score));
@@ -189,6 +260,39 @@ class MoodExplorer {
       exploration: 0.05,
       popularity: 0.15
     };
+
+    // Adjust popularity weight based on user preference
+    const userPopularityPreference = context.userProfile?.popularityPreference || 0.5;
+    if (userPopularityPreference > 0.6) {
+      // User prefers popular songs - increase popularity weight
+      baseWeights.popularity += 0.10;
+      baseWeights.comfortZone -= 0.05;
+      baseWeights.mood -= 0.05;
+    } else if (userPopularityPreference < 0.4) {
+      // User prefers niche songs - decrease popularity weight
+      baseWeights.popularity -= 0.05;
+      baseWeights.comfortZone += 0.05;
+    }
+
+    // Adjust weights based on learning style
+    const userProfile = context.userProfile;
+    if (userProfile && userProfile.learningStyle) {
+      const learningStyle = userProfile.learningStyle;
+      if (learningStyle === 'comfort_zone_required') {
+        // Sarah: Heavily weight comfort zone, reduce exploration
+        baseWeights.comfortZone += 0.10;
+        baseWeights.exploration -= 0.10;
+      } else if (learningStyle === 'comfort_zone_least_important') {
+        // Mike: Reduce comfort zone weight, increase exploration
+        baseWeights.comfortZone -= 0.10;
+        baseWeights.exploration += 0.10;
+      } else if (learningStyle === 'comfort_zone_preferred_but_adventurous') {
+        // Alex: Moderate comfort zone, balanced exploration
+        baseWeights.comfortZone += 0.05;
+        baseWeights.exploration += 0.05;
+        baseWeights.mood -= 0.10; // Reduce mood weight to balance
+      }
+    }
 
     // Adjust weights based on context
     if (context.exploreNewMoods) {
@@ -209,20 +313,37 @@ class MoodExplorer {
       baseWeights.comfortZone -= 0.10;
     }
 
+    // Ensure no negative weights and normalize
+    Object.keys(baseWeights).forEach(key => {
+      baseWeights[key] = Math.max(0, baseWeights[key]);
+    });
+
+    // Normalize weights to sum to 1.0
+    const totalWeight = Object.values(baseWeights).reduce((sum, weight) => sum + weight, 0);
+    if (totalWeight > 0) {
+      Object.keys(baseWeights).forEach(key => {
+        baseWeights[key] = baseWeights[key] / totalWeight;
+      });
+    }
+
     return baseWeights;
   }
 
   getEnhancedMoodAlignmentScore(song, context) {
     const moodMappings = {
-      happy: ['upbeat', 'positive', 'uplifting', 'happy', 'energetic'],
-      sad: ['melancholic', 'sad', 'emotional', 'introspective', 'haunting'],
-      energetic: ['energetic', 'powerful', 'upbeat', 'aggressive', 'intense'],
-      calm: ['peaceful', 'dreamy', 'gentle', 'soft', 'relaxing'],
-      stressed: ['peaceful', 'calm', 'dreamy', 'gentle', 'soothing'],
-      motivated: ['motivational', 'powerful', 'building', 'intense', 'epic'],
-      tired: ['gentle', 'peaceful', 'soft', 'calm', 'dreamy'],
-      neutral: ['balanced', 'moderate', 'versatile'],
-      relaxed: ['peaceful', 'calm', 'gentle', 'soft', 'dreamy']
+      happy: ['upbeat', 'positive', 'uplifting', 'happy', 'energetic', 'playful', 'joyful', 'cheerful', 'optimistic'],
+      sad: ['melancholic', 'sad', 'emotional', 'introspective', 'haunting', 'melancholy', 'sorrowful', 'bittersweet'],
+      energetic: ['energetic', 'powerful', 'upbeat', 'aggressive', 'intense', 'dynamic', 'vibrant', 'pumping', 'driving'],
+      calm: ['peaceful', 'dreamy', 'gentle', 'soft', 'relaxing', 'serene', 'tranquil', 'soothing', 'meditative'],
+      stressed: ['peaceful', 'calm', 'dreamy', 'gentle', 'soothing', 'serene', 'tranquil', 'meditative', 'healing'],
+      motivated: ['motivational', 'powerful', 'building', 'intense', 'epic', 'inspiring', 'empowering', 'confident', 'determined'],
+      tired: ['gentle', 'peaceful', 'soft', 'calm', 'dreamy', 'soothing', 'serene', 'tranquil', 'lullaby'],
+      neutral: ['balanced', 'moderate', 'versatile', 'neutral', 'stable', 'consistent'],
+      relaxed: ['peaceful', 'calm', 'gentle', 'soft', 'dreamy', 'serene', 'tranquil', 'soothing', 'meditative'],
+      focused: ['focused', 'concentrated', 'intense', 'determined', 'serious', 'driven', 'disciplined', 'motivational', 'building', 'epic', 'inspiring'],
+      romantic: ['romantic', 'passionate', 'intimate', 'loving', 'tender', 'sensual', 'affectionate'],
+      nostalgic: ['nostalgic', 'retro', 'vintage', 'memorable', 'sentimental', 'reminiscent', 'timeless'],
+      social: ['social', 'party', 'celebratory', 'communal', 'festive', 'gathering', 'interactive']
     };
 
     const targetMoodTags = moodMappings[context.mood] || [];
@@ -241,6 +362,45 @@ class MoodExplorer {
       });
     }
 
+    // Check LLM-generated mood tags (enhanced data)
+    if (song.llmEnhancement && song.llmEnhancement.generatedTags) {
+      song.llmEnhancement.generatedTags.forEach(tag => {
+        if (targetMoodTags.includes(tag)) {
+          alignmentScore += 1.2; // Slightly higher weight for LLM tags
+          matchCount++;
+        }
+      });
+    }
+
+    // Check LLM mood category direct match
+    if (song.llmEnhancement && song.llmEnhancement.moodCategory) {
+      if (song.llmEnhancement.moodCategory === context.mood) {
+        alignmentScore += 1.5; // Strong match for direct mood category
+        matchCount++;
+      }
+    }
+
+    // Check psychological effect alignment
+    if (song.llmEnhancement && song.llmEnhancement.psychologicalEffect) {
+      const psychEffect = song.llmEnhancement.psychologicalEffect;
+      const moodPsychMap = {
+        happy: ['motivating', 'playful', 'confident'],
+        sad: ['introspective', 'vulnerable'],
+        energetic: ['motivating', 'energizing', 'confident'],
+        calm: ['calming', 'soothing'],
+        stressed: ['calming', 'soothing', 'healing'],
+        motivated: ['motivating', 'energizing', 'confident'],
+        tired: ['calming', 'soothing'],
+        relaxed: ['calming', 'soothing', 'peaceful'],
+        focused: ['motivating', 'serious', 'confident']
+      };
+      
+      if (moodPsychMap[context.mood] && moodPsychMap[context.mood].includes(psychEffect)) {
+        alignmentScore += 1.0;
+        matchCount++;
+      }
+    }
+
     // Energy level correlation
     const energyMoodMap = {
       tired: 'very_low',
@@ -250,16 +410,26 @@ class MoodExplorer {
       happy: 'medium',
       motivated: 'high',
       energetic: 'very_high',
-      stressed: 'low' // Prefer calming music when stressed
+      stressed: 'low', // Prefer calming music when stressed
+      focused: 'high' // Focused mood benefits from high energy
     };
 
     if (song.energy_level === energyMoodMap[context.mood]) {
       alignmentScore += 0.5;
     }
 
-    // Normalize score
-    const maxPossibleScore = Math.max(1, (song.style_tags?.length || 0) + 1);
-    return Math.min(1.0, alignmentScore / maxPossibleScore);
+    // More generous scoring - ensure we get reasonable mood match scores
+    if (matchCount === 0) {
+      // If no direct matches, give a base score based on energy level correlation
+      return song.energy_level === energyMoodMap[context.mood] ? 0.3 : 0.1;
+    }
+    
+    // Normalize score more generously
+    const maxPossibleScore = Math.max(2, matchCount + 1); // More generous normalization
+    const normalizedScore = Math.min(1.0, alignmentScore / maxPossibleScore);
+    
+    // Boost scores to ensure they're presentation-worthy (minimum 0.4 for any match)
+    return Math.max(0.4, normalizedScore);
   }
 
   getEnhancedTimeBasedScore(song, timeOfDay, mood) {
@@ -422,24 +592,33 @@ class MoodExplorer {
    * @returns {Array} Combined and ranked recommendations
    */
   combineRecommendations(comfortZone, contextual, context) {
-    // Weight contextual recommendations higher for mood exploration
-    const contextWeight = context.exploreNewMoods ? 0.7 : 0.3;
-    const comfortWeight = 1 - contextWeight;
-    
     // If contextual list is empty, score comfort picks to provide explanations
     let contextualScored = contextual;
     if (!contextualScored || contextualScored.length === 0) {
       contextualScored = this.scoreSongsByMood(comfortZone, context);
     }
 
-    // Take top contextual recommendations
-    const topContextual = contextualScored.slice(0, Math.ceil(10 * contextWeight));
+    // Score all comfort zone songs for comparison
+    const comfortScored = this.scoreSongsByMood(comfortZone, context);
     
-    // Take remaining from comfort zone
-    const remainingSlots = 10 - topContextual.length;
-    const topComfort = comfortZone.slice(0, remainingSlots);
+    // Combine all scored songs and get the absolute best matches
+    const allScored = [...contextualScored, ...comfortScored];
     
-    return [...topContextual, ...topComfort];
+    // Remove duplicates based on song ID
+    const uniqueSongs = new Map();
+    allScored.forEach(song => {
+      const songId = song.SONG_ID || song.id;
+      if (!uniqueSongs.has(songId) || uniqueSongs.get(songId).contextualScore < song.contextualScore) {
+        uniqueSongs.set(songId, song);
+      }
+    });
+    
+    // Sort by contextual score and return top 10
+    const finalRecommendations = Array.from(uniqueSongs.values())
+      .sort((a, b) => b.contextualScore - a.contextualScore)
+      .slice(0, 10);
+    
+    return finalRecommendations;
   }
 
   /**
@@ -556,6 +735,49 @@ class MoodExplorer {
     // Logarithmic scale: log(playCount + 1) / log(maxExpectedPlays)
     // Normalize to 0-1 scale where 1M plays = 1.0
     return Math.min(1.0, Math.log(playCount + 1) / Math.log(1000000));
+  }
+
+  /**
+   * Enhanced popularity scoring that considers user preference and LLM assessment
+   * @param {Object} song - Song object
+   * @param {Object} userProfile - User profile with popularityPreference
+   * @returns {number} Enhanced popularity score (0-1)
+   */
+  getEnhancedPopularityScore(song, userProfile) {
+    const userPopularityPreference = userProfile?.popularityPreference || 0.5;
+    
+    // Get base popularity score (play count based)
+    const basePopularity = this.getPopularityScore(song);
+    
+    // Get LLM popularity assessment if available
+    let llmPopularity = 0.5; // Default moderate popularity
+    if (song.llmPopularityAssessment) {
+      llmPopularity = song.llmPopularityAssessment.overallPopularity || 0.5;
+    } else {
+      // Fallback: infer from artist name for Yousician vs commercial songs
+      const artistLower = (song.ARTIST_NAME || '').toLowerCase();
+      if (artistLower.includes('yousician')) {
+        llmPopularity = 0.1; // Yousician songs are learning-focused, not commercially popular
+      } else {
+        llmPopularity = 0.6; // Commercial songs generally have higher recognition
+      }
+    }
+    
+    // Combine base popularity (play data) with LLM assessment
+    const combinedPopularity = (basePopularity * 0.3) + (llmPopularity * 0.7);
+    
+    // Apply user preference: if user prefers popular songs, boost high-popularity songs
+    // If user prefers niche songs, boost low-popularity songs
+    let preferenceAdjustedScore;
+    if (userPopularityPreference > 0.5) {
+      // User prefers popular songs - boost high popularity, penalize low popularity
+      preferenceAdjustedScore = combinedPopularity * (0.5 + userPopularityPreference);
+    } else {
+      // User prefers niche songs - boost low popularity, penalize high popularity
+      preferenceAdjustedScore = (1 - combinedPopularity) * (1.5 - userPopularityPreference);
+    }
+    
+    return Math.min(1.0, Math.max(0.0, preferenceAdjustedScore));
   }
 }
 

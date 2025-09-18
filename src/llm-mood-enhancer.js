@@ -17,6 +17,38 @@ class LLMMoodEnhancer {
   }
 
   /**
+   * Generate popularity assessment for a song using LLM
+   * @param {Object} song - Song object with title and artist
+   * @returns {Promise<Object>} Popularity assessment data
+   */
+  async generatePopularityAssessment(song) {
+    const cacheKey = `popularity-${song.ARTIST_NAME}-${song.SONG_TITLE}`;
+    
+    // Check cache first
+    if (this.cache.has(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    try {
+      let popularityData;
+      if (this.openaiApiKey && this.provider === 'openai') {
+        popularityData = await this.generatePopularityAssessmentOpenAI(song);
+      } else {
+        // Simulate popularity assessment
+        popularityData = await this.simulatePopularityAssessment(song);
+      }
+      
+      // Cache the result
+      this.cache.set(cacheKey, popularityData);
+      
+      return popularityData;
+    } catch (error) {
+      console.error(`Error generating popularity assessment for ${song.SONG_TITLE}:`, error);
+      return this.getFallbackPopularityData();
+    }
+  }
+
+  /**
    * Generate mood tags for a song using LLM
    * @param {Object} song - Song object with title and artist
    * @returns {Promise<Object>} Generated mood data
@@ -50,6 +82,78 @@ class LLMMoodEnhancer {
   }
 
   /**
+   * Generate popularity assessment using OpenAI API
+   * @param {Object} song - Song object
+   * @returns {Promise<Object>} Popularity assessment data
+   */
+  async generatePopularityAssessmentOpenAI(song) {
+    const artist = song.ARTIST_NAME || 'Unknown';
+    const title = song.SONG_TITLE || 'Unknown';
+
+    const systemPrompt = `You are a music industry expert. Assess the popularity and recognition level of songs and artists. Consider:
+- Artist recognition (mainstream, indie, unknown)
+- Song popularity (hit, well-known, cult classic, obscure)
+- Cultural impact and recognition
+- Commercial success indicators
+
+Rate popularity on a scale of 0.0 to 1.0 where:
+- 0.9-1.0: Global hits, household names (Beatles, Taylor Swift, etc.)
+- 0.7-0.8: Very popular, widely recognized (major artists, chart hits)
+- 0.5-0.6: Moderately popular, some recognition (indie hits, regional success)
+- 0.3-0.4: Niche popularity, limited recognition (underground, specialized genres)
+- 0.1-0.2: Very limited recognition (local artists, very obscure)
+- 0.0-0.1: Essentially unknown (demo tracks, learning exercises)`;
+
+    const userPrompt = `Assess the popularity of:
+Song: "${title}"
+Artist: "${artist}"
+
+Return a JSON object with:
+{
+  "artistRecognition": 0.0-1.0,
+  "songPopularity": 0.0-1.0,
+  "overallPopularity": 0.0-1.0,
+  "recognitionLevel": "global_hit|very_popular|moderately_popular|niche|limited|unknown",
+  "reasoning": "brief explanation of the assessment"
+}`;
+
+    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: this.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.3,
+      max_tokens: 300
+    }, {
+      headers: {
+        'Authorization': `Bearer ${this.openaiApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000 // 10 second timeout
+    });
+
+    const content = response.data.choices[0].message.content.trim();
+    
+    try {
+      // Extract JSON from markdown code blocks if present
+      const jsonContent = this.extractJSONFromMarkdown(content);
+      const parsed = JSON.parse(jsonContent);
+      return {
+        artistRecognition: parsed.artistRecognition || 0.5,
+        songPopularity: parsed.songPopularity || 0.5,
+        overallPopularity: parsed.overallPopularity || 0.5,
+        recognitionLevel: parsed.recognitionLevel || 'moderately_popular',
+        reasoning: parsed.reasoning || 'Standard assessment',
+        source: 'openai'
+      };
+    } catch (parseError) {
+      console.warn(`Failed to parse popularity assessment for ${title}:`, parseError);
+      return this.getFallbackPopularityData();
+    }
+  }
+
+  /**
    * Call OpenAI Chat Completions to infer mood tags for a song.
    */
   async generateMoodTagsOpenAI(song) {
@@ -66,15 +170,26 @@ class LLMMoodEnhancer {
     const keyMoodHint = mode === 'major' ? 'Generally more uplifting/positive' : 
                        mode === 'minor' ? 'Generally more emotional/melancholic' : '';
 
-    const system = `You are a music tagging assistant. Output concise JSON only.`;
-    const user = `Infer mood tags for the song below. Return a JSON object with:
+    const system = `You are a music mood analysis expert with deep knowledge of how music affects human emotions and psychology. Analyze songs comprehensively to provide rich, nuanced mood tags that capture the emotional essence, energy, and psychological impact of the music. Consider both musical elements and emotional responses.`;
+    
+    const user = `Analyze this song for comprehensive mood and emotional characteristics. Consider:
+- Emotional impact (how it makes listeners feel)
+- Energy and intensity level  
+- Psychological effects (motivating, calming, energizing, etc.)
+- Social context (party music, introspective, romantic, etc.)
+- Temporal feel (nostalgic, futuristic, timeless)
+- Musical elements (tempo, key, pitch range, popularity)
+
+Return a JSON object with:
 {
-  "generatedTags": ["..."],
+  "generatedTags": ["primary_mood", "secondary_mood", "energy_descriptor", "emotional_tone", "context_tag"],
   "energyLevel": "very_low|low|medium|high|very_high",
-  "moodCategory": "happy|sad|energetic|calm|romantic|nostalgic|focused|social|neutral",
-  "confidence": 0..1,
-  "reasoning": "one short sentence"
+  "moodCategory": "happy|sad|energetic|calm|romantic|nostalgic|focused|social|neutral|uplifting|melancholic|aggressive|peaceful|motivating|introspective",
+  "psychologicalEffect": "motivating|calming|energizing|introspective|social|romantic|nostalgic|rebellious|confident|vulnerable|playful|serious",
+  "confidence": 0.0-1.0,
+  "reasoning": "detailed explanation of the mood analysis and why these tags were chosen"
 }
+
 Song: ${title}
 Artist: ${artist}
 Tempo_BPM: ${bpm}
@@ -91,7 +206,8 @@ ${song.TAGS ? `Tags: ${song.TAGS}` : ''}`;
         { role: 'system', content: system },
         { role: 'user', content: user }
       ],
-      temperature: 0.3
+      temperature: 0.2,
+      max_tokens: 500
     };
 
     const resp = await axios.post('https://api.openai.com/v1/chat/completions', body, {
@@ -118,8 +234,9 @@ ${song.TAGS ? `Tags: ${song.TAGS}` : ''}`;
       generatedTags: Array.isArray(parsed.generatedTags) ? parsed.generatedTags : [],
       energyLevel: parsed.energyLevel,
       moodCategory: parsed.moodCategory,
-      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.6,
-      reasoning: parsed.reasoning || 'LLM-based inference',
+      psychologicalEffect: parsed.psychologicalEffect || 'neutral',
+      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.8,
+      reasoning: parsed.reasoning || 'Enhanced LLM-based inference',
       source: 'openai'
     };
   }
@@ -260,6 +377,120 @@ Return a JSON object with:
       confidence: moodInference.confidence,
       reasoning: moodInference.reasoning,
       source: 'llm_simulation'
+    };
+  }
+
+  /**
+   * Simulate popularity assessment for songs
+   * @param {Object} song - Song object
+   * @returns {Promise<Object>} Simulated popularity data
+   */
+  async simulatePopularityAssessment(song) {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const artist = song.ARTIST_NAME || 'Unknown';
+    const title = song.SONG_TITLE || 'Unknown';
+    
+    // Rule-based popularity inference
+    const popularityInference = this.inferPopularityFromTitleAndArtist(artist, title);
+    
+    return {
+      artistRecognition: popularityInference.artistRecognition,
+      songPopularity: popularityInference.songPopularity,
+      overallPopularity: popularityInference.overallPopularity,
+      recognitionLevel: popularityInference.recognitionLevel,
+      reasoning: popularityInference.reasoning,
+      source: 'llm_simulation'
+    };
+  }
+
+  /**
+   * Infer popularity from song title and artist using pattern matching
+   */
+  inferPopularityFromTitleAndArtist(artist, title) {
+    const titleLower = title.toLowerCase();
+    const artistLower = artist.toLowerCase();
+    
+    // Well-known artists (high recognition)
+    const famousArtists = [
+      'van morrison', 'moby', 'hanson', 'zendaya', 'georges brassens',
+      'beatles', 'rolling stones', 'led zeppelin', 'pink floyd', 'queen',
+      'taylor swift', 'ed sheeran', 'adele', 'beyonce', 'drake',
+      'coldplay', 'radiohead', 'nirvana', 'oasis', 'u2'
+    ];
+    
+    // Yousician artists (learning-focused, lower recognition)
+    const yousicianArtists = ['yousician', 'the yousicians'];
+    
+    // Check if it's a Yousician song
+    if (yousicianArtists.some(ys => artistLower.includes(ys))) {
+      return {
+        artistRecognition: 0.1,
+        songPopularity: 0.1,
+        overallPopularity: 0.1,
+        recognitionLevel: 'unknown',
+        reasoning: 'Yousician learning song - designed for practice, not commercial popularity'
+      };
+    }
+    
+    // Check for famous artists
+    const isFamousArtist = famousArtists.some(famous => artistLower.includes(famous));
+    
+    if (isFamousArtist) {
+      return {
+        artistRecognition: 0.8,
+        songPopularity: 0.7,
+        overallPopularity: 0.75,
+        recognitionLevel: 'very_popular',
+        reasoning: 'Well-known artist with commercial recognition'
+      };
+    }
+    
+    // Default to moderate popularity for other commercial songs
+    return {
+      artistRecognition: 0.4,
+      songPopularity: 0.3,
+      overallPopularity: 0.35,
+      recognitionLevel: 'niche',
+      reasoning: 'Commercial song with moderate recognition'
+    };
+  }
+
+  /**
+   * Extract JSON from markdown code blocks or return content as-is
+   * @param {string} content - Content that may contain markdown-wrapped JSON
+   * @returns {string} Extracted JSON string
+   */
+  extractJSONFromMarkdown(content) {
+    // Check if content is wrapped in markdown code blocks
+    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      return jsonMatch[1].trim();
+    }
+    
+    // Check for other common patterns
+    const jsonStart = content.indexOf('{');
+    const jsonEnd = content.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+      return content.substring(jsonStart, jsonEnd + 1);
+    }
+    
+    // Return content as-is if no patterns found
+    return content;
+  }
+
+  /**
+   * Get fallback popularity data when LLM fails
+   */
+  getFallbackPopularityData() {
+    return {
+      artistRecognition: 0.5,
+      songPopularity: 0.5,
+      overallPopularity: 0.5,
+      recognitionLevel: 'moderately_popular',
+      reasoning: 'Standard fallback assessment',
+      source: 'fallback'
     };
   }
 

@@ -10,7 +10,8 @@
     "demo": "node scripts/start-demo.js",
     "demo:refresh": "node scripts/refresh-demo.js",
     "build:story": "node scripts/build-static-story.js",
-    "build:story:csv": "node scripts/build-static-story.js 'song metadata (2).csv'"
+    "build:story:csv": "node scripts/build-static-story.js 'song metadata (2).csv'",
+    "refresh-cache": "node scripts/refresh-cache.js"
   },
   "keywords": ["yousician", "music", "mood", "api", "ai", "openai", "gpt-4", "recommendations", "machine-learning", "behavioral-analysis", "hackday"],
   "author": "",

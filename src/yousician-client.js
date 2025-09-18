@@ -100,17 +100,60 @@ class YousicianClient {
       } else {
         // Mock comfort zone recommendations based on user preferences
         await this.ensureDatasetLoaded();
+        
+        // More nuanced approach: Allow gentle growth for everyone, let scoring handle the balance
+        let minDifficulty, maxDifficulty;
+        const learningStyle = userProfile.learningStyle || '';
+        
+        if (learningStyle === 'comfort_zone_required') {
+          // Sarah: Mostly comfort zone, but allow gentle growth (1 level above)
+          minDifficulty = Math.max(1, userProfile.skillLevel - 1);
+          maxDifficulty = userProfile.skillLevel + 1; // Allow gentle challenge
+        } else if (learningStyle === 'comfort_zone_least_important') {
+          // Mike: Loves challenges - wider range
+          minDifficulty = Math.max(1, userProfile.skillLevel - 1);
+          maxDifficulty = Math.min(10, userProfile.skillLevel + 2); // Allow challenging songs
+        } else if (learningStyle === 'comfort_zone_preferred_but_adventurous') {
+          // Alex: Comfort zone preferred, but can handle challenges
+          minDifficulty = Math.max(1, userProfile.skillLevel - 1);
+          maxDifficulty = Math.min(10, userProfile.skillLevel + 1); // Slight challenge
+        } else {
+          // Default behavior - gentle growth for everyone
+          minDifficulty = Math.max(1, userProfile.skillLevel - 1);
+          maxDifficulty = userProfile.skillLevel + 1;
+        }
+        
         const filters = {
-          min_difficulty: Math.max(1, userProfile.skillLevel - 1),
-          max_difficulty: userProfile.skillLevel + 1,
+          min_difficulty: minDifficulty,
+          max_difficulty: maxDifficulty,
           instrument_fit: userProfile.instrument,
           genre_tags: userProfile.genrePreferences || [],
-          limit: 10
+          limit: 200  // Increased limit to get better mood matches
         };
         let results = this.datasetLoader.getSongs(filters);
         if (results.length === 0) {
-          // Relax constraints progressively for better demo coverage
-          const relaxed = { ...filters, min_difficulty: Math.max(1, (userProfile.skillLevel || 3) - 2), max_difficulty: (userProfile.skillLevel || 3) + 2 };
+          // Relax constraints progressively for better demo coverage, but still respect learning styles
+          let relaxedMinDifficulty, relaxedMaxDifficulty;
+          
+          if (learningStyle === 'comfort_zone_required') {
+            // Sarah: Even when relaxing, don't go too far above skill level
+            relaxedMinDifficulty = Math.max(1, userProfile.skillLevel - 2);
+            relaxedMaxDifficulty = userProfile.skillLevel + 1; // Still limit challenges
+          } else if (learningStyle === 'comfort_zone_least_important') {
+            // Mike: Can handle more challenging songs when relaxing
+            relaxedMinDifficulty = Math.max(1, userProfile.skillLevel - 2);
+            relaxedMaxDifficulty = Math.min(10, userProfile.skillLevel + 3);
+          } else {
+            // Alex and default: Moderate relaxation
+            relaxedMinDifficulty = Math.max(1, userProfile.skillLevel - 2);
+            relaxedMaxDifficulty = Math.min(10, userProfile.skillLevel + 2);
+          }
+          
+          const relaxed = { 
+            ...filters, 
+            min_difficulty: relaxedMinDifficulty, 
+            max_difficulty: relaxedMaxDifficulty 
+          };
           results = this.datasetLoader.getSongs(relaxed);
         }
         if (results.length === 0) {
