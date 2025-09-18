@@ -316,7 +316,7 @@ const mockUserProfiles = [
     id: "user_beginner",
     name: "Sarah (Beginner Guitar Player)",
     age: 15,
-    skillLevel: 3,
+    skillLevel: 4,
     instrument: "guitar",
     genrePreferences: ["pop", "acoustic", "r&b"],
     genreAvoidance: ["metal", "hard_rock"],
@@ -330,7 +330,7 @@ const mockUserProfiles = [
     subscriptionTime: "6 months",
     songsReturnedTo: 6, // Fewer songs in comfort zone - casual player
     typicalDifficulty: 2.1, // Stays in beginner range
-    comfortZoneDifficulty: [1, 2], // Only comfortable with very easy songs
+    comfortZoneDifficulty: [3, 4], // Only comfortable with easy songs
     comfortZoneStyles: ["acoustic", "pop", "r&b"], // Styles they're comfortable with
     learningStyle: "comfort_zone_required", // NEEDS to stay in comfort zone to stay motivated
     dominantEnergy: "medium",
@@ -345,7 +345,7 @@ const mockUserProfiles = [
     genrePreferences: ["country", "folk", "alternative"],
     genreAvoidance: ["classical"],
     playingExperience: "3 years",
-    practiceFrequency: "daily",
+    practiceFrequency: "5 times per week",
     preferredDifficulty: [4, 5, 6],
     learningGoals: ["lead_guitar", "improvisation", "song_writing"],
     popularityPreference: 0.8, // Prefers commercial/popular songs
@@ -369,7 +369,7 @@ const mockUserProfiles = [
     genrePreferences: ["metal", "hard_rock", "progressive"],
     genreAvoidance: ["country"],
     playingExperience: "10+ years",
-    practiceFrequency: "daily",
+    practiceFrequency: "6 times per week",
     preferredDifficulty: [7, 8, 9, 10],
     learningGoals: ["technical_mastery", "complex_compositions"],
     popularityPreference: 0.2, // Prefers challenging, niche songs over mainstream hits

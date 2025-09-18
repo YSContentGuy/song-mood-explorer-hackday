@@ -106,9 +106,9 @@ class YousicianClient {
         const learningStyle = userProfile.learningStyle || '';
         
         if (learningStyle === 'comfort_zone_required') {
-          // Sarah: Mostly comfort zone, but allow gentle growth (1 level above)
+          // Sarah: STRICT comfort zone - only songs at or below her skill level
           minDifficulty = Math.max(1, userProfile.skillLevel - 1);
-          maxDifficulty = userProfile.skillLevel + 1; // Allow gentle challenge
+          maxDifficulty = userProfile.skillLevel; // NO challenge - only comfort zone
         } else if (learningStyle === 'comfort_zone_least_important') {
           // Mike: Loves challenges - wider range
           minDifficulty = Math.max(1, userProfile.skillLevel - 1);

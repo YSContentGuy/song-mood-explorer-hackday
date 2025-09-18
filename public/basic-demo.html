@@ -37,8 +37,8 @@
       <div style="font-weight:600; margin-bottom:8px;">📊 Understanding the Scores:</div>
       <div style="color:#555; line-height:1.5;">
         <div style="margin-bottom:8px;"><strong>🎯 Overall Match (0-100%):</strong> The final score combining all factors - how well this song fits you overall</div>
-        <div style="margin-bottom:8px;"><strong>🏠 Comfort Zone (0-100%):</strong> How familiar you are with this musical style and difficulty level based on your past playing (combines both style and difficulty comfort)</div>
-        <div style="margin-bottom:8px;"><strong>😊 Mood Match (0-100%):</strong> How well the song's emotional energy and style matches your current mood (inferred from your playing patterns)</div>
+        <div style="margin-bottom:8px;"><strong>🏠 Comfort Zone (0-100%):</strong> How comfortable you'll be with the technical difficulty level (based on your skill level and learning style)</div>
+        <div style="margin-bottom:8px;"><strong>😊 Mood Match (0-100%):</strong> How well the song's musical style and emotional energy matches what you want to feel (combines your genre preferences with mood)</div>
         <div style="margin-bottom:8px;"><strong>📈 Playing Patterns:</strong> Shows your actual playing behavior - songs you return to, styles you play most, typical difficulty, comfort zone difficulty range, comfort zone styles, and learning style</div>
       </div>
     </div>
@@ -179,10 +179,10 @@
             <div style='font-weight:600; margin-bottom:6px;'>🎯 Recommendation Scores:</div>
             <div style='display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:6px;'>
               <div class='muted'><strong>🎯 Overall Match:</strong><br/>${s.contextualScore ? Math.round(s.contextualScore*100)+'%' : 'N/A'}<br/><span style='font-size:11px; color:#888;'>Final combined score</span></div>
-              <div class='muted'><strong>🏠 Comfort Zone:</strong><br/>${(s.scoringBreakdown && typeof s.scoringBreakdown.comfortZone === 'number') ? Math.round(s.scoringBreakdown.comfortZone*100)+'%' : 'n/a'}<br/><span style='font-size:11px; color:#888;'>Style & difficulty familiarity</span></div>
+              <div class='muted'><strong>🏠 Comfort Zone:</strong><br/>${(s.scoringBreakdown && typeof s.scoringBreakdown.comfortZone === 'number') ? Math.round(s.scoringBreakdown.comfortZone*100)+'%' : 'n/a'}<br/><span style='font-size:11px; color:#888;'>Technical difficulty comfort</span></div>
             </div>
             <div style='display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:6px;'>
-              ${(s.scoringBreakdown && typeof s.scoringBreakdown.moodAlignment === 'number') ? `<div class='muted'><strong>😊 Mood Match:</strong><br/>${Math.round(s.scoringBreakdown.moodAlignment*100)}%<br/><span style='font-size:11px; color:#888;'>Emotional energy match</span></div>` : '<div></div>'}
+              ${(s.scoringBreakdown && typeof s.scoringBreakdown.moodAlignment === 'number') ? `<div class='muted'><strong>😊 Mood Match:</strong><br/>${Math.round(s.scoringBreakdown.moodAlignment*100)}%<br/><span style='font-size:11px; color:#888;'>Style & emotional energy</span></div>` : '<div></div>'}
               <div class='muted'><strong>⚡ Energy:</strong><br/>${s.energy_level || 'n/a'}<br/><span style='font-size:11px; color:#888;'>Song intensity</span></div>
             </div>
             <div class='muted'><strong>🎸 Difficulty:</strong> ${s.difficulty_level ?? 'n/a'}/10 (based on app difficulty levels)</div>

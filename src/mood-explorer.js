@@ -81,9 +81,9 @@ class MoodExplorer {
     if (context.goals === 'challenge') {
       // Encourage growth for everyone, but respect learning styles
       if (learningStyle === 'comfort_zone_required') {
-        // Sarah: Gentle encouragement - start at skill level, go up 1
-        filters.min_difficulty = userProfile?.skillLevel || 3;
-        filters.max_difficulty = (userProfile?.skillLevel || 3) + 1; // Gentle challenge
+        // Sarah: NO challenge - stay in comfort zone even when "challenging"
+        filters.min_difficulty = Math.max(1, (userProfile?.skillLevel || 3) - 1);
+        filters.max_difficulty = userProfile?.skillLevel || 3; // Stay at skill level
       } else if (learningStyle === 'comfort_zone_least_important') {
         // Mike: Loves challenges - push boundaries more
         filters.min_difficulty = (userProfile?.skillLevel || 3) + 1;
@@ -97,7 +97,8 @@ class MoodExplorer {
     } else if (context.goals === 'relax') {
       // Stay in comfort zone for relaxation
       if (learningStyle === 'comfort_zone_required') {
-        // Sarah: Stay well within comfort zone
+        // Sarah: Stay well within comfort zone - only levels 1-2
+        filters.min_difficulty = 1;
         filters.max_difficulty = Math.max(1, (userProfile?.skillLevel || 3) - 1);
       } else {
         // Others: Stay at or below skill level
@@ -177,73 +178,40 @@ class MoodExplorer {
   }
 
   /**
-   * Estimate a "comfort zone" score from user preferences and difficulty proximity
-   * Adjusted based on learning style preferences
+   * Calculate comfort zone score based ONLY on difficulty level proximity
+   * This represents how comfortable the user will be with the technical difficulty
    */
   getComfortZoneScore(song, userProfile) {
-    let score = 0.5; // neutral baseline
+    let score = 0.0; // Start from 0 - no comfort zone match
 
-    // Difficulty proximity (closer to skillLevel is better, but adjusted by learning style)
+    // Only consider difficulty proximity - this is what "comfort zone" should mean
     if (userProfile && typeof userProfile.skillLevel === 'number' && typeof song.difficulty_level === 'number') {
       const gap = Math.abs(song.difficulty_level - userProfile.skillLevel);
-      let difficultyBonus = 0;
+      let difficultyScore = 0;
       
-      if (gap === 0) difficultyBonus = 0.4;
-      else if (gap === 1) difficultyBonus = 0.3;
-      else if (gap === 2) difficultyBonus = 0.15;
-      else difficultyBonus = 0.0;
+      // Base difficulty scoring
+      if (gap === 0) difficultyScore = 1.0; // Perfect match
+      else if (gap === 1) difficultyScore = 0.7; // Close match
+      else if (gap === 2) difficultyScore = 0.4; // Moderate stretch
+      else difficultyScore = 0.1; // Far from comfort zone
       
-      // Adjust based on learning style - more encouraging approach
+      // Adjust based on learning style
       const learningStyle = userProfile.learningStyle || '';
       if (learningStyle === 'comfort_zone_required') {
-        // Sarah: Prefer comfort zone, but don't completely exclude growth
-        if (gap > 1) difficultyBonus *= 0.5; // Moderate penalty for challenging songs (was 0.3)
-        else if (gap === 1) difficultyBonus *= 0.8; // Light penalty for slightly challenging (was 0.7)
+        // Sarah: Strictly prefer comfort zone difficulty
+        if (gap > 1) difficultyScore *= 0.3; // Heavy penalty for challenging songs
+        else if (gap === 1) difficultyScore *= 0.6; // Moderate penalty for slight challenge
       } else if (learningStyle === 'comfort_zone_least_important') {
-        // Mike: LEAST needs comfort zone - reward challenging songs
-        if (gap > 1) difficultyBonus *= 1.5; // Bonus for challenging songs
-        else if (gap === 0) difficultyBonus *= 0.8; // Slight penalty for too easy
+        // Mike: Doesn't care much about comfort zone - reward challenges
+        if (gap > 1) difficultyScore *= 1.2; // Bonus for challenging songs
+        else if (gap === 0) difficultyScore *= 0.8; // Slight penalty for too easy
       } else if (learningStyle === 'comfort_zone_preferred_but_adventurous') {
-        // Alex: Likes comfort zone but has become more adventurous over time
-        if (gap > 2) difficultyBonus *= 1.2; // Slight bonus for very challenging
-        else if (gap === 0) difficultyBonus *= 1.1; // Slight bonus for comfort zone
+        // Alex: Likes comfort zone but open to growth
+        if (gap > 2) difficultyScore *= 1.1; // Slight bonus for big challenges
+        else if (gap === 0) difficultyScore *= 1.1; // Bonus for comfort zone
       }
       
-      score += difficultyBonus;
-    }
-
-    // Genre preference match - check both genre_tags and style_tags
-    if (userProfile && Array.isArray(userProfile.genrePreferences)) {
-      let matches = 0;
-      
-      // Check genre_tags first
-      if (Array.isArray(song.genre_tags)) {
-        matches += song.genre_tags.filter(g => userProfile.genrePreferences.includes(g)).length;
-      }
-      
-      // Check style_tags for genre matches (since genre_tags is often empty)
-      if (Array.isArray(song.style_tags)) {
-        matches += song.style_tags.filter(tag => userProfile.genrePreferences.includes(tag)).length;
-      }
-      
-      let genreBonus = 0;
-      if (matches >= 2) genreBonus = 0.3;
-      else if (matches === 1) genreBonus = 0.2;
-      
-      // Adjust genre preference based on learning style
-      const learningStyle = userProfile.learningStyle || '';
-      if (learningStyle === 'comfort_zone_required') {
-        // Sarah: Heavily reward familiar genres
-        genreBonus *= 1.3;
-      } else if (learningStyle === 'comfort_zone_least_important') {
-        // Mike: Less emphasis on familiar genres, more on exploration
-        genreBonus *= 0.8;
-      } else if (learningStyle === 'comfort_zone_preferred_but_adventurous') {
-        // Alex: Moderate preference for familiar genres
-        genreBonus *= 1.0;
-      }
-      
-      score += genreBonus;
+      score = difficultyScore;
     }
 
     return Math.min(1.0, Math.max(0.0, score));
@@ -351,6 +319,42 @@ class MoodExplorer {
 
     let alignmentScore = 0;
     let matchCount = 0;
+
+    // MUSICAL STYLE PREFERENCE MATCHING (moved from comfort zone)
+    // This is now part of mood match since it's about what the user wants to feel/hear
+    if (context.userProfile && Array.isArray(context.userProfile.genrePreferences)) {
+      let styleMatches = 0;
+      
+      // Check genre_tags first
+      if (Array.isArray(song.genre_tags)) {
+        styleMatches += song.genre_tags.filter(g => context.userProfile.genrePreferences.includes(g)).length;
+      }
+      
+      // Check style_tags for genre matches (since genre_tags is often empty)
+      if (Array.isArray(song.style_tags)) {
+        styleMatches += song.style_tags.filter(tag => context.userProfile.genrePreferences.includes(tag)).length;
+      }
+      
+      let styleBonus = 0;
+      if (styleMatches >= 2) styleBonus = 0.4; // Strong style match
+      else if (styleMatches === 1) styleBonus = 0.2; // Moderate style match
+      
+      // Adjust style preference based on learning style
+      const learningStyle = context.userProfile.learningStyle || '';
+      if (learningStyle === 'comfort_zone_required') {
+        // Sarah: Heavily reward familiar styles
+        styleBonus *= 1.3;
+      } else if (learningStyle === 'comfort_zone_least_important') {
+        // Mike: Less emphasis on familiar styles, more on exploration
+        styleBonus *= 0.8;
+      } else if (learningStyle === 'comfort_zone_preferred_but_adventurous') {
+        // Alex: Moderate preference for familiar styles
+        styleBonus *= 1.0;
+      }
+      
+      alignmentScore += styleBonus;
+      if (styleMatches > 0) matchCount++;
+    }
 
     // Check style tags alignment
     if (song.style_tags) {
