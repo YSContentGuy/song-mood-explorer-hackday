@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Flask Tutorial App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <div class="container">
+      <h1>Flask Tutorial App</h1>
+
+      <div class="card">
+        <h2>Ask the LLM</h2>
+        <form id="llmForm" class="column">
+          <label for="prompt">Prompt</label>
+          <textarea id="prompt" name="prompt" rows="4" placeholder="Ask a question..." required></textarea>
+          <div class="row">
+            <input id="model" type="text" placeholder="Model (optional, e.g. gpt-4o-mini)">
+            <button id="askBtn" type="submit">Send</button>
+          </div>
+        </form>
+        <div id="llmSection">
+          <div id="llmStatus" class="muted"></div>
+          <pre id="llmOutput" class="mono"></pre>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Your Items</h2>
+        <form class="add-form" method="post" action="{{ url_for('add_item') }}">
+          <input type="text" name="text" placeholder="Add an item" required>
+          <button type="submit">Add</button>
+        </form>
+
+        <ul class="items">
+          {% for item in items %}
+            <li>{{ item }}</li>
+          {% else %}
+            <li class="empty">No items yet. Add one above!</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById('llmForm');
+      const promptEl = document.getElementById('prompt');
+      const modelEl = document.getElementById('model');
+      const askBtn = document.getElementById('askBtn');
+      const statusEl = document.getElementById('llmStatus');
+      const outputEl = document.getElementById('llmOutput');
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const prompt = promptEl.value.trim();
+        if (!prompt) return;
+
+        askBtn.disabled = true;
+        statusEl.textContent = 'Thinking…';
+        outputEl.textContent = '';
+
+        try {
+          const res = await fetch('/api/llm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, model: modelEl.value.trim() || undefined })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            statusEl.textContent = 'Error';
+            outputEl.textContent = (data && (data.error || data.details)) ? JSON.stringify(data, null, 2) : 'Request failed';
+          } else {
+            statusEl.textContent = data.model ? `Model: ${data.model}` : '';
+            outputEl.textContent = data.text || '';
+          }
+        } catch (err) {
+          statusEl.textContent = 'Network error';
+          outputEl.textContent = String(err);
+        } finally {
+          askBtn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
